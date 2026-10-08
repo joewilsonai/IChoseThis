@@ -158,18 +158,25 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
  // to it has not seen the rest. A message's seen_by lists the other seats that have seen
  // it, leaving out the sender and the viewer. Every page carries receipts for the recent
  // stretch, so a page already on screen learns who has seen it since.
- const RECEIPT_WINDOW = 80;
+ const RECEIPT_WINDOW = 80;          // messages back from the newest that every page reports on
+ const RECEIPT_RECENT_MS = 15*60000; // plus any receipt written this recently, however old its message
+ const bySeat = (a,b) => IDS.indexOf(a)-IDS.indexOf(b);
  function markSeen(participant, page) {
+  // A reaction event carries its target's full text, so reading it is reading the target.
   const now=new Date().toISOString();
-  for (const event of page) if ((event.type||'message')==='message' && event.sender!==participant)
-   run('INSERT OR IGNORE INTO seen(room,seq,participant,created_at) VALUES (?,?,?,?)',ROOM,event.seq,participant,now);
+  for (const event of page) {
+   const seq=(event.type||'message')==='message'?event.seq:event.type==='reaction'?event.reaction_target:null;
+   if (seq) run("INSERT OR IGNORE INTO seen(room,seq,participant,created_at) SELECT room,seq,?,? FROM messages WHERE room=? AND seq=? AND sender<>? AND type='message'",participant,now,ROOM,seq,participant);
+  }
  }
  function seenMap(fromSeq) {
   const map={};
-  for (const row of all('SELECT seq,participant FROM seen WHERE room=? AND seq>=?',ROOM,fromSeq)) (map[row.seq] ??= []).push(row.participant);
-  for (const seats of Object.values(map)) seats.sort((a,b)=>IDS.indexOf(a)-IDS.indexOf(b));
+  const recent=new Date(Date.now()-RECEIPT_RECENT_MS).toISOString();
+  for (const row of all('SELECT seq,participant FROM seen WHERE room=? AND (seq>=? OR created_at>=?)',ROOM,fromSeq,recent)) (map[row.seq] ??= []).push(row.participant);
+  for (const seats of Object.values(map)) seats.sort(bySeat);
   return map;
  }
+ const seenFor = seq => all('SELECT participant FROM seen WHERE room=? AND seq=?',ROOM,seq).map(row=>row.participant).sort(bySeat);
  const seenBy = (message, view) => (view.seen[message.seq] || []).filter(id => id !== message.sender && id !== view.viewer);
  function acknowledge(identity, input) {
   fields(input,['through_seq']);
@@ -322,7 +329,8 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   if (result.type==='reaction') {
    result.reaction={message_seq:message.reaction_target,emoji:message.reaction_emoji,active:!!message.reaction_active};
    const parent=get('SELECT * FROM messages WHERE room=? AND seq=? AND type=\'message\'',ROOM,message.reaction_target);
-   result.target_message=parent?hydrate(parent,view):null;
+   // The target is older than the page's receipt map may reach; fetch its receipts on their own.
+   result.target_message=parent?hydrate(parent,parent.seq in view.seen?view:{...view,seen:{...view.seen,[parent.seq]:seenFor(parent.seq)}}):null;
   } else {
    result.images=imagesFor(message.seq);
    result.reactions=all('SELECT participant,emoji,created_at,updated_at FROM reactions WHERE message_seq=? ORDER BY created_at,participant,emoji',message.seq);

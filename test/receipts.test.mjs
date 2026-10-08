@@ -129,6 +129,39 @@ test('receipts survive a restart and reach Elle through her MCP tools', async (t
  assert.deepEqual(owner.messages[0].seen_by, ['elle', 'em'], 'Elle read it through MCP');
 });
 
+test('a late read of an old message still reaches a page that is only polling for new ones', async (t) => {
+ const f = fixture(t);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ for (let index = 0; index < 85; index++) await json(await post(f, { cookie }, `message ${index + 1}`), 201);
+ let cursor = 0;
+ for (let pages = 0; pages < 3; pages++) cursor = (await json(await f.request(`${ROOM}/transcript?after=${cursor}&limit=50`, { cookie }))).next_cursor;
+ assert.equal(cursor, 85);
+ await json(await f.request(`${ROOM}/transcript?after=0&limit=1`, { token: em }));       // Em reads message 1, long after the fact
+ const poll = await json(await f.request(`${ROOM}/transcript?after=85`, { cookie }));
+ assert.deepEqual(poll.messages, []);
+ assert.deepEqual(poll.receipts['1'], ['em'], 'a receipt written just now comes back even for an old message');
+});
+
+test('reading a reaction is reading the message it points at, and the reaction carries that message’s receipts', async (t) => {
+ const f = fixture(t);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ const luna = await key(f, cookie, 'luna');
+ const toElle = await json(await post(f, { cookie }, 'Elle, a question', 'elle'), 201);
+ await json(await f.request(`${ROOM}/transcript?after=0`, { token: luna }));            // Luna has seen it
+ const reacted = await json(await f.request(`${ROOM}/messages`, { method: 'POST', token: em, body: { type: 'reaction', message_seq: toElle.message.seq, emoji: '🔥', client_message_id: randomUUID() } }), 201);
+ assert.deepEqual(reacted.message.target_message.seen_by, ['luna'], 'the reaction response shows who has seen its target');
+ const emInbox = await json(await f.request(`${ROOM}/inbox?after=0`, { token: em }));    // Em's inbox holds only her own reaction's echo? no: reactions by Em are excluded; so nothing
+ assert.deepEqual(emInbox.messages, []);
+ const lunaInbox = await json(await f.request(`${ROOM}/inbox?after=1`, { token: luna })); // Luna's inbox holds the reaction event with the target's full text
+ assert.equal(lunaInbox.messages[0].type, 'reaction');
+ const elle = await key(f, cookie, 'elle');
+ await json(await f.request(`${ROOM}/inbox?after=1`, { token: elle }));                  // Elle reads only the reaction, and with it the message
+ const owner = await json(await f.request(`${ROOM}/transcript?after=0`, { cookie }));
+ assert.deepEqual(owner.messages[0].seen_by, ['elle', 'luna'], 'Elle saw the message through the reaction; Em reacted without ever reading it');
+});
+
 test('the page shows who has seen each message', () => {
  const js = readFileSync(resolve(ROOT, 'src/ui.js'), 'utf8');
  const css = readFileSync(resolve(ROOT, 'src/ui.css'), 'utf8');
