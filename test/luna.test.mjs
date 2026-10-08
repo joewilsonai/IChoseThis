@@ -82,6 +82,10 @@ function seedThreeSeatRoom(db) {
  insert.run(1, 'elle-em', 'human', 'all', 'Welcome to the room', 'h-1', null, now, 'message');
  insert.run(2, 'elle-em', 'em', 'human', 'Here is a picture', 'em-1', 1, now, 'message');
  insert.run(7, 'elle-em', 'elle', 'em', 'Replying after a gap', 'elle-1', null, now, 'message');
+ // A message that was once the newest and was removed by hand: the AUTOINCREMENT
+ // counter stays at 9, and a widened room must not hand 8 or 9 out again.
+ insert.run(9, 'elle-em', 'elle', 'em', 'Deleted by hand', 'elle-2', null, now, 'message');
+ db.exec('DELETE FROM messages WHERE seq=9');
  db.prepare('INSERT INTO images(id,message_seq,ordinal,mime_type,filename,size,sha256,data,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
   .run('a'.repeat(32), 2, 0, 'image/png', 'dot.png', PNG.length, hash(PNG), PNG, now);
  db.prepare('INSERT INTO reactions(message_seq,participant,emoji,created_at,updated_at) VALUES (?,?,?,?,?)').run(1, 'em', '🔥', now, now);
@@ -227,7 +231,7 @@ test('a room built before Luna had a seat keeps every message, picture, reaction
  assert.deepEqual(f.sql('SELECT seq,status FROM doorbell_outbox'), [{ seq: 7, status: 'pending' }]);
  const luna = await key(f, cookie, 'luna');
  const posted = await json(await post(f, { token: luna }, 'First words from the fourth seat', 'all'), 201);
- assert.equal(posted.message.seq, 8, 'new messages continue after the old highest sequence');
+ assert.equal(posted.message.seq, 10, 'new messages continue after the old counter, not after the surviving rows');
  await json(await post(f, { cookie }, 'A note for Luna', 'luna'), 201);
  assert.equal(f.sql('PRAGMA foreign_key_check').length, 0);
  f.restart();

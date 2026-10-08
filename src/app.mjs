@@ -120,6 +120,9 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   if (IDS.every(id => definition.includes(`'${id}'`))) return;
   const columns = all('PRAGMA table_info(messages)').map(column => column.name).join(',');
   const seats = IDS.map(id => `'${id}'`).join(',');
+  // The rebuilt table would restart its counter at the highest surviving row. A row
+  // removed by hand above that would be numbered again, below every agent's cursor.
+  const highWater = get("SELECT seq FROM sqlite_sequence WHERE name='messages'")?.seq ?? 0;
   db.exec('PRAGMA foreign_keys=OFF');
   try {
    transaction(() => {
@@ -136,6 +139,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
     db.exec(`INSERT INTO messages_widened(${columns}) SELECT ${columns} FROM messages`);
     db.exec('DROP TABLE messages');
     db.exec('ALTER TABLE messages_widened RENAME TO messages');
+    run("UPDATE sqlite_sequence SET seq=? WHERE name='messages' AND seq<?", highWater, highWater);
     db.exec('CREATE INDEX IF NOT EXISTS idx_messages_room_seq ON messages(room,seq)');
     if (all('PRAGMA foreign_key_check').length) throw new Error('The room history did not survive widening its seats.');
    });
