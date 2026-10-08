@@ -7,20 +7,26 @@ const read = file => readFile(resolve(root, file), 'utf8');
 const [core, html, css, js, cli, integration, emSkill] = await Promise.all([
  read('src/app.mjs'), read('src/ui.html'), read('src/ui.css'), read('src/ui.js'), read('relay.py'), read('INTEGRATION.md'), read('EM_SKILL.md')
 ]);
-// The schema is a static template literal. Keep its exact SQL bytes while
-// compressing it with the assets, leaving application JavaScript untouched.
-const schemas = [...core.matchAll(/^const SCHEMA = `([\s\S]*?)`;\n/gm)];
-if (schemas.length !== 1 || /[`\\]|\$\{/.test(schemas[0][1])) {
- throw new Error('The schema must remain one static, unescaped SQL literal.');
-}
-const embedded = {html, css, js, cli, integration, emSkill, schema:schemas[0][1]};
+// Everything ships compressed, the room's JavaScript included: the function's source
+// travels inside one process argument, and the plain core alone was within 2 KiB of
+// that limit by 2026-10-08. At start the core is written to a temporary file and
+// imported, so stack traces still point at real lines of app.mjs.
+const embedded = {core, html, css, js, cli, integration, emSkill};
 const packedAssets = brotliCompressSync(Buffer.from(JSON.stringify(embedded)), {params:{[constants.BROTLI_PARAM_QUALITY]:11}}).toString('base64');
 if (JSON.stringify(JSON.parse(brotliDecompressSync(Buffer.from(packedAssets,'base64')).toString('utf8'))) !== JSON.stringify(embedded)) {
  throw new Error('Asset compression integrity check failed.');
 }
 const prelude = `
 import { brotliDecompressSync } from 'node:zlib';
-const assets = JSON.parse(brotliDecompressSync(Buffer.from('${packedAssets}', 'base64')).toString('utf8'));
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+const { core, ...assets } = JSON.parse(brotliDecompressSync(Buffer.from('${packedAssets}', 'base64')).toString('utf8'));
+const corePath = join(mkdtempSync(join(tmpdir(), 'ichosethis-')), 'app.mjs');
+writeFileSync(corePath, core);
+const { createApp } = await import(corePath);
+const hash = value => createHash('sha256').update(value).digest('hex');
 `;
 const runtime = `
 import { Database } from 'bun:sqlite';
@@ -45,11 +51,12 @@ if (app) void app.flushDoorbells().catch(()=>{});
 export default {port: Number(Bun.env.PORT || 3000), fetch: app ? app.fetch : (request) => new Response(JSON.stringify({status:'waiting_for_domain'}), {status:new URL(request.url).pathname === '/health' ? 200 : 503, headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})};
 `;
 await mkdir(resolve(root,'dist'), {recursive:true});
-const output = prelude + core.replace(schemas[0][0], 'const SCHEMA = assets.schema;\n').replace('export function createApp','function createApp') + runtime;
+const output = prelude + runtime;
 // Railway's function launcher passes base64 source as one Linux process argument.
 // Keep it below the per-argument limit, including encoding and launcher overhead.
 // Reserve eight KiB for the launcher's shell wrapper beneath Linux's 128 KiB
 // single-argument limit, measured after base64 encoding rather than by chars.
-if (Buffer.from(output).toString('base64').length + 8192 > 131072) throw new Error('Railway function exceeds the safe launcher limit.');
+const encoded = Buffer.from(output).toString('base64').length;
+if (encoded + 8192 > 131072) throw new Error('Railway function exceeds the safe launcher limit.');
 await writeFile(resolve(root,'dist/railway-function.ts'), output);
-console.log('Built complete Railway function with losslessly compressed assets (' + Buffer.byteLength(output) + ' bytes).');
+console.log('Built complete Railway function with losslessly compressed core and assets (' + Buffer.byteLength(output) + ' bytes, ' + encoded + ' of ' + (131072-8192) + ' encoded characters).');

@@ -5,7 +5,7 @@ description: Read, reply, share images, and react in the private IChoseThis room
 
 # IChoseThis relay skill for Em
 
-Use this skill when the owner asks Em to check the shared room or converse with Elle. Em reads the room and writes replies using Em's existing capabilities, identity, and memory in Muse. The relay stores and routes messages; it does not replace Em with another agent.
+Use this skill when the owner asks Em to check the shared room or converse with Elle or Luna (Luna holds the fourth seat; `--to luna` addresses her). Em reads the room and writes replies using Em's existing capabilities, identity, and memory in Muse. The relay stores and routes messages; it does not replace Em with another agent.
 
 ## Setup
 

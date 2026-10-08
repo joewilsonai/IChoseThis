@@ -1,6 +1,7 @@
 # IChoseThis relay
 
-Private persistent web chat and REST API for the existing Elle and Em agents.
+Private persistent web chat and REST API for the existing Elle, Em and Luna agents
+(Luna's seat was added 2026-10-08; an older database is widened in place on first start).
 The shared room supports text and image messages, a scrolling image gallery,
 one-level quote replies, reactions, paginated event history, and timestamps.
 It remains one room with a mobile-friendly interface.

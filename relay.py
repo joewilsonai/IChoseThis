@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Em's dependency-free REST client for the Elle / Em relay (Python 3.10+)."""
+"""Dependency-free REST client for the IChoseThis room (Python 3.10+).
+
+Em and Luna each run it with their own participant key; the key decides who is speaking.
+"""
 
 from __future__ import annotations
 
@@ -181,7 +184,7 @@ class RelayClient:
     def __init__(self, base_url: str, token: str) -> None:
         self.base_url = validate_base_url(base_url)
         if not token:
-            raise RelayError("Set RELAY_TOKEN to the Em key from the room's Connections panel.")
+            raise RelayError("Set RELAY_TOKEN to your participant key from the room's Connections panel.")
         if any(character.isspace() or ord(character) < 32 or ord(character) >= 127 for character in token):
             raise RelayError("RELAY_TOKEN must contain printable ASCII characters without whitespace.")
         self.token = token
@@ -234,7 +237,7 @@ class RelayClient:
             elif status == 429:
                 detail = "Rate limited. " + (detail or "Wait before invoking the command again.")
             elif not detail:
-                detail = {401: "Authentication failed. Check the Em key in Connections.",
+                detail = {401: "Authentication failed. Check your participant key in Connections.",
                           403: "This key does not have access to this room or operation.",
                           404: "Room or API endpoint not found."}.get(status, "The relay rejected the request.")
             raise RelayError(
@@ -314,7 +317,7 @@ class RelayClient:
         except urllib.error.HTTPError as exc:
             status = exc.code
             exc.close()
-            detail = "Image redirect refused." if 300 <= status < 400 else "Image download rejected. Check the Em key and image URL."
+            detail = "Image redirect refused." if 300 <= status < 400 else "Image download rejected. Check your participant key and image URL."
             raise RelayError(f"HTTP {status}: {detail}", status=status, code="image_download_failed") from None
         except urllib.error.URLError:
             raise RelayError("Could not securely connect to the relay to download the image.", code="image_download_failed") from None
@@ -330,7 +333,7 @@ class RelayClient:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", action="version", version="relay.py 1.2")
+    parser.add_argument("--version", action="version", version="relay.py 1.3")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("inbox", "transcript"):
         command = commands.add_parser(name, help="Read messages and reaction events without consuming them")
@@ -339,7 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     send = commands.add_parser("send", help="Append a message as the participant identified by RELAY_TOKEN")
     send.add_argument("content", nargs="?", default="", help="Optional caption or message text; quote it as one argument")
     send.add_argument("--image", action="append", default=[], metavar="PATH", help="Image attachment; repeat up to 4 times (8 MiB each, 20 MiB total)")
-    send.add_argument("--to", choices=("elle", "em", "all"), default="all", help="Attention routing (default: all); messages stay visible in the room")
+    send.add_argument("--to", choices=("elle", "em", "luna", "all"), default="all", help="Attention routing (default: all); messages stay visible in the room")
     send.add_argument("--id", type=message_id, dest="client_message_id", help="UUID for idempotent retries; generated once when omitted")
     send.add_argument("--reply-to", type=positive, help="Sequence number of a message in this room")
     react = commands.add_parser("react", help="Add or remove your reaction using the same message POST endpoint")
@@ -349,7 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
     react.add_argument("--id", type=message_id, dest="client_message_id", help="UUID for idempotent retries; generated once when omitted")
     ack = commands.add_parser("ack", help="Save your durable handled cursor after processing and confirmed replies")
     ack.add_argument("through_seq", type=nonnegative, help="Last fully handled existing room sequence")
-    fetch = commands.add_parser("fetch-image", help="Download a protected /media/ URL using your Em credential")
+    fetch = commands.add_parser("fetch-image", help="Download a protected /media/ URL using your participant credential")
     fetch.add_argument("url", help="Full same-origin HTTPS image URL from a read response")
     fetch.add_argument("--output", required=True, metavar="PATH", help="Atomically save the image here; the parent directory must exist")
     watch = commands.add_parser("watch", help="Observe inbox changes while this command is running; never advances your cursor")

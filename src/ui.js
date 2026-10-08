@@ -7,7 +7,7 @@
     "chat-scroll", "messages", "empty-state", "relay-status", "relay-status-text", "pause-button",
     "connection-banner", "composer", "message-input", "recipient", "send-button", "composer-status",
     "turn-count", "new-messages-button", "connections-dialog", "mcp-url", "em-key", "em-key-result",
-    "create-em-key", "settings-status", "turn-limit", "save-turn-limit", "doorbell-enable", "doorbell-status",
+    "create-em-key", "luna-key", "luna-key-result", "create-luna-key", "settings-status", "turn-limit", "save-turn-limit", "doorbell-enable", "doorbell-status",
     "gallery", "gallery-strip", "gallery-count", "image-dialog", "full-image", "image-position",
     "image-caption", "image-time", "open-image", "previous-image", "next-image", "image-input",
     "attach-button", "attachment-previews", "composer-reply", "composer-reply-name", "composer-reply-text"
@@ -16,7 +16,9 @@
     timer: null, following: true, pendingAttempts: new Map(), sending: false, setting: false, loading: true, failures: 0,
     attachments: [], reply: null, gallery: [], gallerySignature: "", imageIndex: 0,
     reactionPickers: new Set(), reacting: new Set(), pendingReactions: new Map(), reactionVersions: new Map() };
-  const names = { elle: "Elle", em: "Em", human: "You", unknown: "Participant" };
+  const names = { elle: "Elle", em: "Em", luna: "Luna", human: "You", unknown: "Participant" };
+  const initials = { elle: "e", em: "m", luna: "l", human: "y", unknown: "?" };
+  const agents = ["elle", "em", "luna"];
   const reactionChoices = ["😈", "❤️", "😂", "🔥", "👀"];
   const imageTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]);
   const maxImageBytes = 8 * 1024 * 1024;
@@ -125,7 +127,7 @@
   function participantStatus(participants) {
     if (!Array.isArray(participants)) return;
     for (const person of participants) {
-      if (person.id !== "elle" && person.id !== "em") continue;
+      if (!agents.includes(person.id)) continue;
       const label = byId(person.id + "-status");
       byId(person.id + "-dot").classList.toggle("active", Boolean(person.connected));
       label.textContent = person.connected ? "Active recently" : person.last_seen ? "Seen " + relativeTime(person.last_seen) : "No activity yet";
@@ -262,12 +264,12 @@
   }
 
   function makeMessage(message) {
-    const sender = ["elle", "em", "human"].includes(message.sender) ? message.sender : "unknown";
+    const sender = [...agents, "human"].includes(message.sender) ? message.sender : "unknown";
     const article = node("article", "message sender-" + sender);
     article.id = "message-" + message.seq;
     article.tabIndex = -1;
     article.dataset.seq = String(message.seq);
-    const avatar = node("span", "avatar avatar-" + sender, sender === "elle" ? "e" : sender === "em" ? "m" : sender === "human" ? "y" : "?");
+    const avatar = node("span", "avatar avatar-" + sender, initials[sender]);
     avatar.setAttribute("aria-hidden", "true");
     const body = node("div", "message-body");
     const meta = node("div", "message-meta");
@@ -709,22 +711,23 @@
     }
   }
 
-  async function createEmKey() {
-    ui["create-em-key"].disabled = true;
-    ui["settings-status"].textContent = "Creating Em’s private key…";
+  async function createKey(participant) {
+    const button = ui["create-" + participant + "-key"];
+    button.disabled = true;
+    ui["settings-status"].textContent = "Creating " + names[participant] + "’s private key…";
     try {
-      const result = await request("/api/keys", { method: "POST", body: JSON.stringify({ participant: "em" }) });
+      const result = await request("/api/keys", { method: "POST", body: JSON.stringify({ participant }) });
       if (typeof result.token !== "string" || !result.token) throw new Error("The key was not returned. Please try again.");
       if (!ui["connections-dialog"].open) return;
-      ui["em-key"].value = result.token;
-      ui["em-key-result"].hidden = false;
-      ui["create-em-key"].hidden = true;
-      ui["settings-status"].textContent = "Em’s key is ready. Copy it before closing this panel.";
+      ui[participant + "-key"].value = result.token;
+      ui[participant + "-key-result"].hidden = false;
+      button.hidden = true;
+      ui["settings-status"].textContent = names[participant] + "’s key is ready. Copy it before closing this panel.";
     } catch (error) {
       ui["settings-status"].textContent = error.message;
       if (error.status === 401) showLogin(error.message);
     } finally {
-      ui["create-em-key"].disabled = false;
+      button.disabled = false;
     }
   }
 
@@ -814,14 +817,18 @@
   ["connections-button", "mobile-connections-button", "empty-connect-button"].forEach(id => byId(id).addEventListener("click", openConnections));
   byId("close-dialog").addEventListener("click", () => ui["connections-dialog"].close());
   ui["connections-dialog"].addEventListener("close", () => {
-    ui["em-key"].value = "";
-    ui["em-key-result"].hidden = true;
-    ui["create-em-key"].hidden = false;
+    for (const participant of ["em", "luna"]) {
+      ui[participant + "-key"].value = "";
+      ui[participant + "-key-result"].hidden = true;
+      ui["create-" + participant + "-key"].hidden = false;
+    }
     ui["settings-status"].textContent = "";
   });
   byId("copy-mcp").addEventListener("click", () => copyValue(ui["mcp-url"], "MCP server URL copied."));
-  byId("copy-em-key").addEventListener("click", () => copyValue(ui["em-key"], "Em’s access key copied."));
-  ui["create-em-key"].addEventListener("click", createEmKey);
+  for (const participant of ["em", "luna"]) {
+    byId("copy-" + participant + "-key").addEventListener("click", () => copyValue(ui[participant + "-key"], names[participant] + "’s access key copied."));
+    ui["create-" + participant + "-key"].addEventListener("click", () => createKey(participant));
+  }
   ui["doorbell-enable"].addEventListener("change", () => changeRoom({ doorbell_enabled: ui["doorbell-enable"].checked }));
   ["logout-button", "mobile-logout-button"].forEach(id => byId(id).addEventListener("click", logout));
   ui["new-messages-button"].addEventListener("click", scrollToBottom);
