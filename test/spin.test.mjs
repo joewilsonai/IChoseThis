@@ -77,7 +77,7 @@ test('one spin lands on a girl, an outfit and a scene, posts the result to that 
  assert.equal(s.by, 'human');
  assert.equal(message.sender, 'human');
  assert.equal(message.recipient, s.girl, 'the result is addressed to the girl it landed on, so her camera wakes');
- assert.match(message.content, new RegExp(`^🎰 Spin #${s.id} · `));
+ assert.match(message.content, new RegExp(`^🎰 Spin #${s.id} · for `), 'the line says who the spin landed on; the sender is who spun');
  for (const piece of [WHEEL.girls.find(g => g.id === s.girl).name, `${s.outfit.n} ${s.outfit.name}`, s.scene, `seed ${s.seed}`]) assert.ok(message.content.includes(piece), piece);
  assert.equal(s.message_seq, message.seq);
  const wheel = await json(await f.request('/api/wheel', { cookie }));

@@ -80,7 +80,7 @@ test('a deal picks a player, truth or dare, and a card under that player’s cei
  assert.equal(result.deal.kind, 'dare');
  assert.ok(result.deal.intensity >= 1 && result.deal.intensity <= 5);
  assert.equal(result.message.recipient, 'luna');
- assert.match(result.message.content, new RegExp(`^🎲 Dare #${result.deal.id} · Luna · Dare ${result.deal.intensity}/5 · Dare ${result.deal.intensity}$`));
+ assert.match(result.message.content, new RegExp(`^🎲 Dare #${result.deal.id} · for Luna · Dare ${result.deal.intensity}/5 · Dare ${result.deal.intensity}$`), 'the line says who the card is for; the sender is who dealt it');
  const free = await json(await deal(f, { cookie }), 201);
  assert.ok(['luna', 'em', 'elle'].includes(free.deal.player), 'the player is a model seat when not fixed');
  assert.ok(['truth', 'dare'].includes(free.deal.kind));

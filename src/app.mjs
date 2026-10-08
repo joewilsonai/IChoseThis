@@ -573,7 +573,8 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    if (input.respin_of !== undefined) run('UPDATE spins SET vetoed=1 WHERE room=? AND id=?',ROOM,input.respin_of);
    return get('INSERT INTO spins(room,seed,girl,outfit,scene,spinner,created_at,respin_of) VALUES (?,?,?,?,?,?,?,?) RETURNING *',ROOM,seed,girl,outfit.n,scene,identity.participant,new Date().toISOString(),input.respin_of ?? null);
   });
-  const content = `🎰 Spin #${row.id} · ${name} · ${outfit.n} ${outfit.name} · ${scene} · seed ${seed}` + (input.respin_of !== undefined ? ` · re-spin of #${input.respin_of}` : '') + (replayed ? ` · again, as #${replayed.id}` : '');
+  // The line names who it is for; the sender is who spun or dealt (the eye read them as one).
+  const content = `🎰 Spin #${row.id} · for ${name} · ${outfit.n} ${outfit.name} · ${scene} · seed ${seed}` + (input.respin_of !== undefined ? ` · re-spin of #${input.respin_of}` : '') + (replayed ? ` · again, as #${replayed.id}` : '');
   let posted;
   try {
    posted = sendMessage(identity, {content, recipient:girl, client_message_id:`spin:${row.id}`});
@@ -690,7 +691,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   const row = get('INSERT INTO deals(room,card_id,player,kind,intensity,dealer,created_at) VALUES (?,?,?,?,?,?,?) RETURNING *',ROOM,card.id,player,kind,card.intensity,identity.participant,new Date().toISOString());
   let posted;
   try {
-   posted = sendMessage(identity,{content:`🎲 Dare #${row.id} · ${NAMES[player]} · ${title(kind)} ${card.intensity}/5 · ${card.text}`,recipient:player,client_message_id:`dare:${row.id}`});
+   posted = sendMessage(identity,{content:`🎲 Dare #${row.id} · for ${NAMES[player]} · ${title(kind)} ${card.intensity}/5 · ${card.text}`,recipient:player,client_message_id:`dare:${row.id}`});
   } catch (error) {
    run('DELETE FROM deals WHERE room=? AND id=?',ROOM,row.id);
    throw error;

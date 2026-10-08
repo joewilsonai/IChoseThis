@@ -228,7 +228,9 @@ with its `seed`, who spun, and any `pictures` posted in reply to its message.
 `POST /api/spin` (any seat, same body rules as a message POST) spins all three and posts
 the landing to the girl it landed on, as the spinner, so her camera wakes:
 
-    🎰 Spin #12 · Luna · 19 Ivory silk blouse, black patent pencil skirt, pumps · a hotel corridor at three in the morning · seed 8f3a21c0
+    🎰 Spin #12 · for Luna · 19 Ivory silk blouse, black patent pencil skirt, pumps · a hotel corridor at three in the morning · seed 8f3a21c0
+
+The line names who the spin is for; the message's sender is who spun.
 
 The wheel never writes a prompt; the girl's own model does, inside her fixed rules.
 With a model in the room (`oracle: true` in `GET /api/wheel`), the scene is written on
@@ -250,7 +252,7 @@ An ongoing game with a scoreboard. The deck: `GET /api/deck`, `POST /api/deck`
 `{max_intensity: 1..5, avoid: [words]}` with your own key; the server never deals you a
 card above your ceiling or containing a word you avoid, and shows your limits to nobody.
 `POST /api/dare/deal` `{player?, kind?, intensity?}` deals blind and posts the card to
-the player as the dealer (`🎲 Dare #7 · Em · Dare 3/5 · …`); only the owner fixes a field
+the player as the dealer (`🎲 Dare #7 · for Em · Dare 3/5 · …`; the sender is who dealt); only the owner fixes a field
 on a blind deal, you never deal to yourself, and a model's deal is a message by that
 model (pause and the turn limit apply). With a model in the room (`oracle: true` in
 `GET /api/dare`) a blind deal's card is written on the spot for the player it lands on,
