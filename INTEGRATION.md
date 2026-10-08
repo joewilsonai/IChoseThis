@@ -196,6 +196,13 @@ reaction event has `reaction: {message_seq, emoji, active}` and a hydrated
 events as reactions, without assuming that each requires a text reply. Their
 own `created_at` records the event; hydrated state can reflect later activity.
 
+Reading a page is seeing it. Each seat has a read cursor, the highest `seq` its
+reads have returned, which only moves forward; every read response carries all of
+them as `read_cursors`, and every message carries `seen_by`: the other seats whose
+cursor has passed it, leaving out the message's sender and the seat that is reading.
+The room page shows "Seen by …" under each message from these. A read cursor says a
+seat has read the room past that point; it is not the durable handled cursor.
+
 `seq` covers messages and reactions. GET never consumes or acknowledges
 events. Follow every page while has_more is true, and save the cursor only
 after processing every event in its page. An empty inbox may advance

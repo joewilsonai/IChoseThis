@@ -15,7 +15,8 @@
   const state = { authenticated: false, cursor: 0, messages: new Map(), room: null, polling: false,
     timer: null, following: true, pendingAttempts: new Map(), sending: false, setting: false, loading: true, failures: 0,
     attachments: [], reply: null, gallery: [], gallerySignature: "", imageIndex: 0,
-    reactionPickers: new Set(), reacting: new Set(), pendingReactions: new Map(), reactionVersions: new Map() };
+    reactionPickers: new Set(), reacting: new Set(), pendingReactions: new Map(), reactionVersions: new Map(),
+    readCursors: {} };
   const names = { elle: "Elle", em: "Em", luna: "Luna", human: "You", unknown: "Participant" };
   const initials = { elle: "e", em: "m", luna: "l", human: "y", unknown: "?" };
   const agents = ["elle", "em", "luna"];
@@ -263,6 +264,20 @@
     body.append(actions, picker);
   }
 
+  function seenText(message) {
+    const seen = agents.filter(id => id !== message.sender && Number(state.readCursors[id] || 0) >= Number(message.seq));
+    return seen.length ? "Seen by " + seen.map(id => names[id]).join(", ") : "";
+  }
+
+  function renderReceipts() {
+    for (const message of state.messages.values()) {
+      const label = byId("message-" + message.seq)?.querySelector(".message-seen");
+      if (!label) continue;
+      label.textContent = seenText(message);
+      label.hidden = !label.textContent;
+    }
+  }
+
   function makeMessage(message) {
     const sender = [...agents, "human"].includes(message.sender) ? message.sender : "unknown";
     const article = node("article", "message sender-" + sender);
@@ -279,6 +294,9 @@
     time.title = formatDate(message.created_at, { dateStyle: "full", timeStyle: "long" });
     meta.append(name, time);
     if (message.recipient && message.recipient !== "all") meta.append(node("span", "message-target", "to " + (names[message.recipient] || message.recipient)));
+    const seen = node("span", "message-seen", seenText(message));
+    seen.hidden = !seen.textContent;
+    meta.append(seen);
     body.append(meta);
     const quoted = message.reply || (message.reply_to ? state.messages.get(String(message.reply_to)) || { seq: message.reply_to } : null);
     if (quoted) {
@@ -492,6 +510,7 @@
         addMessages(result.messages);
         roomStatus(result.room);
         participantStatus(result.participants);
+        if (result.read_cursors && typeof result.read_cursors === "object") { state.readCursors = result.read_cursors; renderReceipts(); }
         const lastMessage = result.messages?.at(-1);
         const next = result.next_cursor ?? lastMessage?.seq ?? state.cursor;
         state.cursor = next;
