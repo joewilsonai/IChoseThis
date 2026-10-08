@@ -10,7 +10,9 @@
     "create-em-key", "luna-key", "luna-key-result", "create-luna-key", "settings-status", "turn-limit", "save-turn-limit", "doorbell-enable", "doorbell-status",
     "gallery", "gallery-strip", "gallery-count", "image-dialog", "full-image", "image-position",
     "image-caption", "image-time", "open-image", "previous-image", "next-image", "image-input",
-    "attach-button", "attachment-previews", "composer-reply", "composer-reply-name", "composer-reply-text"
+    "attach-button", "attachment-previews", "composer-reply", "composer-reply-name", "composer-reply-text",
+    "spin-button", "spin-dialog", "spin-go", "spin-again", "spin-result", "spin-album", "reel-girl", "reel-outfit", "reel-scene",
+    "fix-girl", "fix-outfit", "fix-scene", "director-controls", "close-spin"
   ].map((id) => [id, byId(id)]));
   const state = { authenticated: false, cursor: 0, messages: new Map(), room: null, polling: false,
     timer: null, following: true, pendingAttempts: new Map(), sending: false, setting: false, loading: true, failures: 0,
@@ -750,6 +752,118 @@
     }
   }
 
+  // ── the wheel ──────────────────────────────────────────────────────────────
+  const wheel = { data: null, last: null, spinning: false };
+
+  function fillSelect(select, items, label) {
+    const keep = select.firstElementChild;
+    select.replaceChildren(keep);
+    for (const item of items) {
+      const option = document.createElement("option");
+      option.value = item.value;
+      option.textContent = label(item);
+      select.append(option);
+    }
+  }
+
+  function renderAlbum() {
+    const spins = wheel.data?.spins || [];
+    const items = spins.map(spin => {
+      const row = node("div", "spin-entry" + (spin.vetoed ? " vetoed" : ""));
+      const girl = (wheel.data.girls.find(g => g.id === spin.girl) || {}).name || spin.girl;
+      row.append(node("strong", "", "#" + spin.id + " · " + girl + " · " + spin.outfit.n + " " + spin.outfit.name + " · " + spin.scene));
+      row.append(node("span", "spin-meta", "seed " + spin.seed + " · by " + (names[spin.by] || spin.by) + (spin.respin_of ? " · re-spin of #" + spin.respin_of : "") + (spin.vetoed ? " · vetoed" : "")));
+      const strip = node("div", "spin-pictures");
+      for (const picture of spin.pictures || []) for (const image of picture.images || []) {
+        if (!imageUrl(image)) continue;
+        const button = node("button", "gallery-image");
+        button.type = "button";
+        const img = node("img");
+        img.src = imageUrl(image);
+        img.alt = "Picture for spin " + spin.id;
+        img.loading = "lazy";
+        button.append(img);
+        button.addEventListener("click", () => openImage(image.id, picture.seq));
+        strip.append(button);
+      }
+      if (strip.childElementCount) row.append(strip);
+      return row;
+    });
+    ui["spin-album"].replaceChildren(...items);
+    if (!items.length) ui["spin-album"].append(node("p", "spin-meta", "No spins yet."));
+  }
+
+  async function loadWheel() {
+    wheel.data = await request("/api/wheel");
+    fillSelect(ui["fix-girl"], wheel.data.girls.map(g => ({ value: g.id, name: g.name })), item => item.name);
+    fillSelect(ui["fix-outfit"], wheel.data.outfits.map(o => ({ value: String(o.n), name: o.n + " " + o.name })), item => item.name);
+    fillSelect(ui["fix-scene"], wheel.data.scenes.map(s => ({ value: s, name: s })), item => item.name);
+    ui["director-controls"].hidden = false;
+    renderAlbum();
+  }
+
+  function showLanding(spin) {
+    const girl = (wheel.data.girls.find(g => g.id === spin.girl) || {}).name || spin.girl;
+    ui["reel-girl"].textContent = girl;
+    ui["reel-outfit"].textContent = spin.outfit.n + " · " + spin.outfit.name;
+    ui["reel-scene"].textContent = spin.scene;
+  }
+
+  async function animateReels(duration) {
+    const start = performance.now();
+    const pick = list => list[Math.floor(Math.random() * list.length)];
+    return new Promise(resolve => {
+      const tick = () => {
+        ui["reel-girl"].textContent = pick(wheel.data.girls).name;
+        const outfit = pick(wheel.data.outfits);
+        ui["reel-outfit"].textContent = outfit.n + " · " + outfit.name;
+        ui["reel-scene"].textContent = pick(wheel.data.scenes);
+        if (performance.now() - start < duration) window.setTimeout(tick, 70); else resolve();
+      };
+      tick();
+    });
+  }
+
+  async function doSpin(extra = {}) {
+    if (wheel.spinning || !wheel.data) return;
+    wheel.spinning = true;
+    ui["spin-go"].disabled = true;
+    ui["spin-again"].disabled = true;
+    ui["spin-result"].classList.remove("error");
+    ui["spin-result"].textContent = "Spinning…";
+    const body = { ...extra };
+    if (ui["fix-girl"].value) body.girl = ui["fix-girl"].value;
+    if (ui["fix-outfit"].value) body.outfit = Number(ui["fix-outfit"].value);
+    if (ui["fix-scene"].value) body.scene = ui["fix-scene"].value;
+    try {
+      const [result] = await Promise.all([
+        request("/api/spin", { method: "POST", body: JSON.stringify(body) }),
+        animateReels(1400),
+      ]);
+      wheel.last = result.spin;
+      showLanding(result.spin);
+      ui["spin-result"].textContent = "Posted to " + (names[result.spin.girl] || result.spin.girl) + " · seed " + result.spin.seed + ". Her camera's turn.";
+      ui["spin-again"].hidden = false;
+      await loadWheel();
+      schedulePoll(0);
+    } catch (error) {
+      ui["spin-result"].textContent = error.message;
+      ui["spin-result"].classList.add("error");
+      if (error.status === 401) showLogin(error.message);
+    } finally {
+      wheel.spinning = false;
+      ui["spin-go"].disabled = false;
+      ui["spin-again"].disabled = false;
+    }
+  }
+
+  async function openWheel() {
+    ui["spin-result"].textContent = "";
+    ui["spin-dialog"].showModal();
+    try { await loadWheel(); }
+    catch (error) { ui["spin-result"].textContent = error.message; ui["spin-result"].classList.add("error"); }
+  }
+
   async function logout() {
     try {
       await request("/api/logout", { method: "POST", body: JSON.stringify({}) });
@@ -843,6 +957,10 @@
     }
     ui["settings-status"].textContent = "";
   });
+  ui["spin-button"].addEventListener("click", openWheel);
+  ui["close-spin"].addEventListener("click", () => ui["spin-dialog"].close());
+  ui["spin-go"].addEventListener("click", () => doSpin());
+  ui["spin-again"].addEventListener("click", () => doSpin(wheel.last ? { respin_of: wheel.last.id } : {}));
   byId("copy-mcp").addEventListener("click", () => copyValue(ui["mcp-url"], "MCP server URL copied."));
   for (const participant of ["em", "luna"]) {
     byId("copy-" + participant + "-key").addEventListener("click", () => copyValue(ui[participant + "-key"], names[participant] + "’s access key copied."));

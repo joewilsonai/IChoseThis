@@ -1,0 +1,562 @@
+{
+ "girls": [
+  {
+   "id": "luna",
+   "name": "Luna"
+  },
+  {
+   "id": "em",
+   "name": "Em"
+  },
+  {
+   "id": "elle",
+   "name": "Elle"
+  }
+ ],
+ "outfits": [
+  {
+   "n": 1,
+   "name": "Black long-sleeve crop top, mini skirt with chain belt, patent knee boots",
+   "category": "going-out",
+   "colors": [
+    "black",
+    "silver"
+   ]
+  },
+  {
+   "n": 2,
+   "name": "Sheer mesh long-sleeve top over a bandeau, patent flared trousers, heeled boots, ring choker",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 3,
+   "name": "High-neck long-sleeve midi dress with waist cut-outs, silver cuff, knee boots",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 4,
+   "name": "Black blazer, emerald satin blouse, slim trousers, pumps",
+   "category": "office",
+   "colors": [
+    "black",
+    "emerald"
+   ]
+  },
+  {
+   "n": 5,
+   "name": "Black blazer, satin cami, pencil skirt, pumps",
+   "category": "office",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 6,
+   "name": "Cropped black blazer over an oxblood midi dress, slingbacks, silver hoops",
+   "category": "office",
+   "colors": [
+    "black",
+    "oxblood"
+   ]
+  },
+  {
+   "n": 7,
+   "name": "Square-neck long-sleeve top, mini skirt with chain belt, chain choker, pumps",
+   "category": "going-out",
+   "colors": [
+    "black",
+    "silver"
+   ]
+  },
+  {
+   "n": 8,
+   "name": "Champagne satin cowl-neck slip dress, fine necklace, clear heeled sandals",
+   "category": "evening",
+   "colors": [
+    "champagne"
+   ]
+  },
+  {
+   "n": 9,
+   "name": "High-neck midi dress with sheer sleeves and sheer panels, silver cuffs, patent knee boots",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 10,
+   "name": "Black satin plunge gown with a high slit",
+   "category": "evening",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 11,
+   "name": "Black lace bra, garter belt and thong with a long sheer robe",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 12,
+   "name": "Sheer mesh long-sleeve bodysuit with ring harness and chain collar",
+   "category": "lingerie",
+   "colors": [
+    "black",
+    "silver"
+   ]
+  },
+  {
+   "n": 13,
+   "name": "Black satin short-sleeve pyjama shirt and shorts, slippers",
+   "category": "sleep",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 14,
+   "name": "Oxblood satin chemise with lace trim, fine necklace",
+   "category": "sleep",
+   "colors": [
+    "oxblood"
+   ]
+  },
+  {
+   "n": 15,
+   "name": "Emerald satin long pyjama set, black slippers",
+   "category": "sleep",
+   "colors": [
+    "emerald"
+   ]
+  },
+  {
+   "n": 16,
+   "name": "Oxblood satin robe over a black lace-trim slip, black mules",
+   "category": "sleep",
+   "colors": [
+    "oxblood",
+    "black"
+   ]
+  },
+  {
+   "n": 17,
+   "name": "Accessory board: chain choker, chain belt, patent chain-strap bag, silver cuffs, silver hoops",
+   "category": "accessories",
+   "colors": [
+    "silver",
+    "black"
+   ]
+  },
+  {
+   "n": 18,
+   "name": "Shoe board: patent pumps, patent thigh-high boots, strappy heeled sandals",
+   "category": "accessories",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 19,
+   "name": "Ivory silk blouse, black patent pencil skirt, pumps",
+   "category": "office",
+   "colors": [
+    "ivory",
+    "black"
+   ]
+  },
+  {
+   "n": 20,
+   "name": "Sheer mesh long-sleeve crop top, patent leggings, heeled boots",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 21,
+   "name": "Off-shoulder oversized knit sweater dress, thigh-high socks",
+   "category": "lounge",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 22,
+   "name": "Cropped cami, flared lounge trousers, slides",
+   "category": "lounge",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 23,
+   "name": "Oxblood satin lace-trim cami and shorts, matching slippers, silver hoops",
+   "category": "sleep",
+   "colors": [
+    "oxblood"
+   ]
+  },
+  {
+   "n": 24,
+   "name": "Open-knit cardigan over a black bodysuit, thigh-high socks, silver cuff",
+   "category": "lounge",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 25,
+   "name": "Cropped hoodie, drawstring shorts, slouch socks, waist chain",
+   "category": "lounge",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 26,
+   "name": "Emerald satin robe over a black lace bralette and shorts, slides",
+   "category": "lingerie",
+   "colors": [
+    "emerald",
+    "black"
+   ]
+  },
+  {
+   "n": 27,
+   "name": "Velvet long-sleeve crop top and wide-leg trousers, silver cuff, slippers",
+   "category": "lounge",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 28,
+   "name": "Knit henley, boy shorts, slouch thigh-high socks",
+   "category": "lounge",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 29,
+   "name": "Sheer tie-neck blouse over a lace bra, pencil skirt, pumps",
+   "category": "office",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 30,
+   "name": "Tailored black suit with a lace bralette, pumps",
+   "category": "office",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 31,
+   "name": "Long-sleeve wrap dress with a buckle belt, pumps, silver hoops",
+   "category": "office",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 32,
+   "name": "Sheer white balloon-sleeve blouse over a black lace bra, patent pencil skirt, pumps",
+   "category": "office",
+   "colors": [
+    "white",
+    "black"
+   ]
+  },
+  {
+   "n": 33,
+   "name": "Pinstripe cropped blazer over a sheer mesh top, pinstripe mini with chain belt, pumps",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 34,
+   "name": "Patent blazer dress with belt, patent thigh-high boots",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 35,
+   "name": "Halter-neck wide-leg jumpsuit with belt",
+   "category": "evening",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 36,
+   "name": "Emerald satin blouse, pencil skirt with chain belt, pumps",
+   "category": "office",
+   "colors": [
+    "emerald",
+    "black"
+   ]
+  },
+  {
+   "n": 37,
+   "name": "High-neck top with sheer sleeves and sheer yoke, wide-leg trousers",
+   "category": "evening",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 38,
+   "name": "Champagne crochet maxi dress with slit, tan strappy sandals, silver hoops",
+   "category": "resort",
+   "colors": [
+    "champagne"
+   ]
+  },
+  {
+   "n": 39,
+   "name": "Sheer tiered maxi dress over a black slip, flat sandals",
+   "category": "resort",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 40,
+   "name": "Halter mini dress with full skirt and back chain, flat sandals",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 41,
+   "name": "Emerald satin cowl-neck slip dress, clear sandals",
+   "category": "evening",
+   "colors": [
+    "emerald"
+   ]
+  },
+  {
+   "n": 42,
+   "name": "Plunge one-piece swimsuit with ring details, slides",
+   "category": "swim",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 43,
+   "name": "Oxblood satin balconette bikini, matching slides, silver hoops",
+   "category": "swim",
+   "colors": [
+    "oxblood"
+   ]
+  },
+  {
+   "n": 44,
+   "name": "Black triangle string bikini with silver chain straps, chain bracelet",
+   "category": "swim",
+   "colors": [
+    "black",
+    "silver"
+   ]
+  },
+  {
+   "n": 45,
+   "name": "Sheer kaftan cover-up over a black bikini, slides",
+   "category": "swim",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 46,
+   "name": "Patent long-sleeve zip-front bodysuit, patent loafers",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 47,
+   "name": "Accessory board: leather O-ring collar, buckle cuffs, chain leash, garter straps with clips, patent clutch",
+   "category": "accessories",
+   "colors": [
+    "black",
+    "silver"
+   ]
+  },
+  {
+   "n": 48,
+   "name": "Black patent trench coat with belt, pumps",
+   "category": "outerwear",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 49,
+   "name": "Black lace-cup sheer babydoll with bow",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 50,
+   "name": "Black sheer long nightgown with lace trim and side slit",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 51,
+   "name": "Oxblood lace and sheer mesh babydoll",
+   "category": "lingerie",
+   "colors": [
+    "oxblood"
+   ]
+  },
+  {
+   "n": 52,
+   "name": "Black sheer babydoll with harness straps and rings",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 53,
+   "name": "Emerald sheer chiffon gown with cowl neck and cape sleeves",
+   "category": "lingerie",
+   "colors": [
+    "emerald"
+   ]
+  },
+  {
+   "n": 54,
+   "name": "Black lace and sheer mesh chemise with keyhole front",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 55,
+   "name": "Black sheer lace-trim robe over a sheer babydoll",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 56,
+   "name": "Champagne sheer embroidered slip",
+   "category": "lingerie",
+   "colors": [
+    "champagne"
+   ]
+  },
+  {
+   "n": 57,
+   "name": "Black sheer tie-shoulder babydoll with ruffle hem",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 58,
+   "name": "Black sheer oversized shirt with lace pocket",
+   "category": "lingerie",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 59,
+   "name": "Black long-sleeve high-neck column gown with open back",
+   "category": "evening",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 60,
+   "name": "Oversized black satin shirt over a white tee, chain, patent mules",
+   "category": "going-out",
+   "colors": [
+    "black"
+   ]
+  },
+  {
+   "n": 61,
+   "name": "Black lace-stripe sheer high-neck long-sleeve gown",
+   "category": "lingerie",
+   "colors": [
+    "black",
+    "ivory"
+   ]
+  }
+ ],
+ "scenes": [
+  "a hotel corridor at three in the morning",
+  "a rooftop at midnight with the party two floors down",
+  "the back seat of a taxi in the rain",
+  "backstage, ten minutes before curtain",
+  "a kitchen at two in the morning, one light on",
+  "an elevator between floors",
+  "a gallery opening, glass of wine in hand",
+  "the last train home",
+  "a diner booth at dawn",
+  "a hotel balcony over a sleeping city",
+  "a laundromat at midnight",
+  "a bookshop after closing",
+  "a rain-streaked phone box",
+  "the deep end of an empty pool at night",
+  "a jazz bar, the band on a break",
+  "a parking garage, headlights behind her",
+  "a dressing room with the mirror lights on",
+  "a greenhouse in the rain",
+  "a train platform in winter",
+  "a motel doorway, neon sign buzzing",
+  "the back porch at the end of a party",
+  "an airport at four in the morning",
+  "a cathedral step in evening light",
+  "a fire escape in summer heat",
+  "the pit lane of an empty racetrack",
+  "a cinema after the credits",
+  "a boxing gym, lights half off",
+  "a wine cellar by candle",
+  "a ferry deck in fog",
+  "a penthouse window, storm outside",
+  "a flower market at six in the morning",
+  "a subway car, empty but for her",
+  "a desert road at golden hour",
+  "the stage of an empty theatre",
+  "a bathroom mirror at a wedding",
+  "an all-night bakery",
+  "the end of a pier",
+  "a hotel lobby at checkout",
+  "a rooftop pool at noon",
+  "a snowed-in cabin doorway"
+ ]
+}

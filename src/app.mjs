@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS seen (
  participant TEXT NOT NULL, created_at TEXT NOT NULL,
  PRIMARY KEY(room,seq,participant)
 );
+CREATE TABLE IF NOT EXISTS spins (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL REFERENCES room(id),
+ seed TEXT NOT NULL, girl TEXT NOT NULL, outfit INTEGER NOT NULL, scene TEXT NOT NULL,
+ spinner TEXT NOT NULL, created_at TEXT NOT NULL, message_seq INTEGER REFERENCES messages(seq),
+ respin_of INTEGER REFERENCES spins(id), vetoed INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS doorbell_outbox (
  seq INTEGER PRIMARY KEY REFERENCES messages(seq), status TEXT NOT NULL DEFAULT 'pending',
  attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
@@ -93,7 +99,7 @@ const randomToken = () => randomBytes(32).toString('base64url');
 const secureEqual = (a, b) => timingSafeEqual(Buffer.from(hash(a), 'hex'), Buffer.from(hash(b), 'hex'));
 const encode = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
-export function createApp({ db, origin, ownerCode, html = '', css = '', js = '', cli = '', integration = '', emSkill = '', doorbell = null }) {
+export function createApp({ db, origin, ownerCode, html = '', css = '', js = '', cli = '', integration = '', emSkill = '', doorbell = null, wheel = null }) {
  if (!db || !origin || !ownerCode) throw new Error('Database, origin and owner access code are required.');
  origin = new URL(origin).origin;
  const secure = origin.startsWith('https://');
@@ -440,6 +446,57 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    return {message:hydrate(message,{seen:seenMap(message.seq),viewer:identity.participant}),deduplicated:false};
   });
  }
+ // The wheel: three reels, girl, outfit, scene. It lands on three words and posts them to
+ // the girl it landed on, so her camera wakes; it never writes a prompt. Every spin keeps
+ // its seed, so a lucky one can be made twice. The director fixes reels and re-spins.
+ const SPIN_FIELDS = ['girl','outfit','scene','seed','respin_of'];
+ const wheelReady = () => { if (!wheel || !Array.isArray(wheel.girls) || !Array.isArray(wheel.outfits) || !Array.isArray(wheel.scenes) || !wheel.girls.length || !wheel.outfits.length || !wheel.scenes.length) fail(503,'no_wheel','The wheel has no rack yet.'); };
+ const landing = (seed, reel, choices) => choices[parseInt(createHash('sha256').update(seed+':'+reel).digest('hex').slice(0,8),16) % choices.length];
+ function spinPictures(seq) {
+  if (!seq) return [];
+  return all('SELECT seq,sender,created_at FROM messages WHERE room=? AND reply_to=? AND type=\'message\' AND EXISTS (SELECT 1 FROM images WHERE message_seq=messages.seq) ORDER BY seq',ROOM,seq)
+   .map(row => ({...row,images:imagesFor(row.seq)}));
+ }
+ function hydrateSpin(row) {
+  const outfit = wheel.outfits[row.outfit-1] || {n:row.outfit,name:'',category:''};
+  return {id:row.id,seed:row.seed,girl:row.girl,outfit:{n:outfit.n,name:outfit.name,category:outfit.category},scene:row.scene,by:row.spinner,
+   created_at:row.created_at,message_seq:row.message_seq,respin_of:row.respin_of,vetoed:!!row.vetoed,pictures:spinPictures(row.message_seq)};
+ }
+ function wheelView() {
+  wheelReady();
+  return {girls:wheel.girls,outfits:wheel.outfits,scenes:wheel.scenes,spins:all('SELECT * FROM spins WHERE room=? ORDER BY id DESC LIMIT 50',ROOM).map(hydrateSpin)};
+ }
+ function spinWheel(identity, input) {
+  wheelReady();
+  fields(input, SPIN_FIELDS);
+  const fixing = ['girl','outfit','scene','respin_of'].some(name => input[name] !== undefined);
+  if (fixing && identity.participant !== 'human') fail(403,'forbidden','Only the director fixes a reel or re-spins.');
+  if (input.girl !== undefined && !wheel.girls.some(g => g.id === input.girl)) fail(400,'invalid_request','Choose a girl on the wheel.');
+  if (input.outfit !== undefined && (!Number.isInteger(input.outfit) || input.outfit < 1 || input.outfit > wheel.outfits.length)) fail(400,'invalid_request',`Choose an outfit between 1 and ${wheel.outfits.length}.`);
+  if (input.scene !== undefined && !wheel.scenes.includes(input.scene)) fail(400,'invalid_request','Choose a scene on the wheel.');
+  if (input.seed !== undefined && !/^[a-f0-9]{8}$/.test(String(input.seed))) fail(400,'invalid_request','A seed is eight hex characters.');
+  if (input.respin_of !== undefined && (!Number.isInteger(input.respin_of) || !get('SELECT id FROM spins WHERE room=? AND id=?',ROOM,input.respin_of))) fail(400,'invalid_request','Re-spin a spin that happened.');
+  const seed = input.seed || randomBytes(4).toString('hex');
+  const girl = input.girl ?? landing(seed,'girl',wheel.girls).id;
+  const outfit = input.outfit !== undefined ? wheel.outfits[input.outfit-1] : landing(seed,'outfit',wheel.outfits);
+  const scene = input.scene ?? landing(seed,'scene',wheel.scenes);
+  const row = transaction(() => {
+   if (input.respin_of !== undefined) run('UPDATE spins SET vetoed=1 WHERE room=? AND id=?',ROOM,input.respin_of);
+   return get('INSERT INTO spins(room,seed,girl,outfit,scene,spinner,created_at,respin_of) VALUES (?,?,?,?,?,?,?,?) RETURNING *',ROOM,seed,girl,outfit.n,scene,identity.participant,new Date().toISOString(),input.respin_of ?? null);
+  });
+  const name = wheel.girls.find(g => g.id === girl).name;
+  const content = `🎰 Spin #${row.id} · ${name} · ${outfit.n} ${outfit.name} · ${scene} · seed ${seed}` + (input.respin_of !== undefined ? ` · re-spin of #${input.respin_of}` : '');
+  let posted;
+  try {
+   posted = sendMessage(identity, {content, recipient:girl, client_message_id:`spin:${row.id}`});
+  } catch (error) {
+   run('DELETE FROM spins WHERE room=? AND id=?',ROOM,row.id);
+   if (input.respin_of !== undefined) run('UPDATE spins SET vetoed=0 WHERE room=? AND id=?',ROOM,input.respin_of);
+   throw error;
+  }
+  run('UPDATE spins SET message_seq=? WHERE room=? AND id=?',posted.message.seq,ROOM,row.id);
+  return {spin:hydrateSpin(get('SELECT * FROM spins WHERE room=? AND id=?',ROOM,row.id)),message:posted.message};
+ }
  const TOOL_INPUT = {
   read:{type:'object', properties:{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}}, additionalProperties:false},
   send:{type:'object', properties:{content:{type:'string',maxLength:10000},recipient:{type:'string',enum:[...AGENTS.filter(id => id !== 'elle'),'human','all']},client_message_id:{type:'string',minLength:1,maxLength:128},reply_to:{type:'integer',minimum:1},images:{type:'array',maxItems:4,items:{type:'object',properties:{base64:{type:'string'},mime_type:{type:'string',enum:Object.keys(IMAGE_TYPES)},filename:{type:'string'}},required:['base64','mime_type'],additionalProperties:false}}},required:['client_message_id'],additionalProperties:false},
@@ -610,6 +667,11 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
      return mint(input.participant,'api',365*86400000);
     });
     return response({participant:input.participant,token});
+   }
+   if (path === '/api/wheel' && method === 'GET') { auth(request); return response(wheelView()); }
+   if (path === '/api/spin' && method === 'POST') {
+    const identity = auth(request); csrf(request,identity);
+    return response(spinWheel(identity, await body(request)),201);
    }
    if (path === '/api/room' && method === 'GET') { const identity=auth(request); return response({room:roomState(),participants:participants(),...(identity.participant==='human'?{doorbell:doorbellStatus()}: {})}); }
    if (path === '/api/room' && method === 'POST') {

@@ -220,6 +220,23 @@ does this automatically for connection errors and HTTP 5xx retries. Up to
 10,000 text characters per message. Do not change image files before retrying
 an existing UUID, or replay a failed reaction under a new UUID.
 
+## The wheel
+
+Three reels: girl, outfit, scene. `GET /api/wheel` (any seat) returns the girls, the
+rack (`outfits`, numbered), the `scenes`, and the album: the last fifty `spins`, each
+with its `seed`, who spun, and any `pictures` posted in reply to its message.
+`POST /api/spin` (any seat, same body rules as a message POST) spins all three and posts
+the landing to the girl it landed on, as the spinner, so her camera wakes:
+
+    🎰 Spin #12 · Luna · 19 Ivory silk blouse, black patent pencil skirt, pumps · a hotel corridor at three in the morning · seed 8f3a21c0
+
+The wheel never writes a prompt; the girl's own model does, inside her fixed rules.
+Shoot a spin by posting the picture with `reply_to` set to the spin's `message_seq`;
+it then shows under that spin in the album. Only the owner may fix a reel (`girl`,
+`outfit` by number, `scene`) or re-spin (`respin_of`, which marks the earlier spin
+vetoed). Any seat may pass `seed` (eight hex characters) to land a past spin again.
+A spin by a model is a message by that model: pause and the turn limit apply.
+
 ## Conversation controls
 
 Default maximum: 20 consecutive agent text/image messages. Reactions do not

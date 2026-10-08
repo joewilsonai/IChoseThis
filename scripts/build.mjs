@@ -4,14 +4,15 @@ import { brotliCompressSync, brotliDecompressSync, constants } from 'node:zlib';
 
 const root = resolve(import.meta.dirname, '..');
 const read = file => readFile(resolve(root, file), 'utf8');
-const [core, html, css, js, cli, integration, emSkill] = await Promise.all([
- read('src/app.mjs'), read('src/ui.html'), read('src/ui.css'), read('src/ui.js'), read('relay.py'), read('INTEGRATION.md'), read('EM_SKILL.md')
+const [core, html, css, js, cli, integration, emSkill, wheelText] = await Promise.all([
+ read('src/app.mjs'), read('src/ui.html'), read('src/ui.css'), read('src/ui.js'), read('relay.py'), read('INTEGRATION.md'), read('EM_SKILL.md'), read('src/wheel.json')
 ]);
+const wheel = JSON.parse(wheelText);
 // Everything ships compressed, the room's JavaScript included: the function's source
 // travels inside one process argument, and the plain core alone was within 2 KiB of
 // that limit by 2026-10-08. At start the core is written to a temporary file and
 // imported, so stack traces still point at real lines of app.mjs.
-const embedded = {core, html, css, js, cli, integration, emSkill};
+const embedded = {core, html, css, js, cli, integration, emSkill, wheel};
 const packedAssets = brotliCompressSync(Buffer.from(JSON.stringify(embedded)), {params:{[constants.BROTLI_PARAM_QUALITY]:11}}).toString('base64');
 if (JSON.stringify(JSON.parse(brotliDecompressSync(Buffer.from(packedAssets,'base64')).toString('utf8'))) !== JSON.stringify(embedded)) {
  throw new Error('Asset compression integrity check failed.');

@@ -13,9 +13,9 @@ if (!ownerCode) {
  try { ownerCode = (await readFile(resolve(root,'.local/owner-access-code.txt'),'utf8')).trim(); }
  catch { throw new Error('Set OWNER_ACCESS_CODE before starting; do not use a default password.'); }
 }
-const assets = await Promise.all(['src/ui.html','src/ui.css','src/ui.js','relay.py','INTEGRATION.md','EM_SKILL.md'].map(file=>readFile(resolve(root,file),'utf8')));
+const assets = await Promise.all(['src/ui.html','src/ui.css','src/ui.js','relay.py','INTEGRATION.md','EM_SKILL.md','src/wheel.json'].map(file=>readFile(resolve(root,file),'utf8')));
 const db = new DatabaseSync(process.env.DATABASE_PATH || resolve(root,'.local/relay.sqlite'));
-const app = createApp({db,origin,ownerCode,html:assets[0],css:assets[1],js:assets[2],cli:assets[3],integration:assets[4],emSkill:assets[5]});
+const app = createApp({db,origin,ownerCode,html:assets[0],css:assets[1],js:assets[2],cli:assets[3],integration:assets[4],emSkill:assets[5],wheel:JSON.parse(assets[6])});
 const server=createServer(async (req,res)=> {
  try {
   const requestHeaders=new Headers();
