@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
 const { core, ...assets } = JSON.parse(brotliDecompressSync(Buffer.from('${packedAssets}', 'base64')).toString('utf8'));
 const corePath = join(mkdtempSync(join(tmpdir(), 'ichosethis-')), 'app.mjs');
 writeFileSync(corePath, core);
-const { createApp } = await import(corePath);
+const { createApp, createOracle } = await import(corePath);
 const hash = value => createHash('sha256').update(value).digest('hex');
 `;
 const runtime = `
@@ -45,7 +45,9 @@ const doorbell = emailKey && emailFrom && emailTo ? async ({seq,origin}) => {
  const delivery = await fetch('https://api.resend.com/emails', {method:'POST',signal:AbortSignal.timeout(9000),headers:{Authorization:'Bearer '+emailKey,'Content-Type':'application/json','Idempotency-Key':'ichosethis-'+hash(origin).slice(0,16)+'-'+seq},body:JSON.stringify({from:emailFrom,to:[emailTo],subject:'[IChoseThis] Doorbell '+seq,text:'A new room message is ready.\\nRoom: IChoseThis\\nSequence: '+seq+'\\nOpen the authenticated IChoseThis plugin to read your inbox.\\n'+origin+'\\nThis notification contains no room message text or pictures.'})});
  if (!delivery.ok) throw new Error('delivery_failed');
 } : null;
-const app = appOrigin.startsWith('https://') ? createApp({db: database, origin: appOrigin, ownerCode: accessCode, doorbell, ...assets}) : null;
+// With ANTHROPIC_API_KEY set, the room's model writes spins' scenes and blind deals' cards live.
+const oracle = Bun.env.ANTHROPIC_API_KEY ? createOracle({apiKey: Bun.env.ANTHROPIC_API_KEY, model: Bun.env.ROOM_MODEL || 'claude-sonnet-5-5'}) : null;
+const app = appOrigin.startsWith('https://') ? createApp({db: database, origin: appOrigin, ownerCode: accessCode, doorbell, oracle, ...assets}) : null;
 if (app) void app.flushDoorbells().catch(()=>{});
 // Railway requires a live service instance before it can allocate a domain.
 // During that provisioning step no room data or sign-in is exposed.

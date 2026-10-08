@@ -802,6 +802,7 @@
     fillSelect(ui["fix-girl"], wheel.data.girls.map(g => ({ value: g.id, name: g.name })), item => item.name);
     fillSelect(ui["fix-outfit"], wheel.data.outfits.map(o => ({ value: String(o.n), name: o.n + " " + o.name })), item => item.name);
     fillSelect(ui["fix-scene"], wheel.data.scenes.map(s => ({ value: s, name: s })), item => item.name);
+    ui["fix-scene"].firstElementChild.textContent = wheel.data.oracle ? "a scene written on the spin" : "any scene";
     ui["director-controls"].hidden = false;
     renderAlbum();
   }
@@ -917,6 +918,7 @@
     const [board, deck] = await Promise.all([request("/api/dare"), request("/api/deck")]);
     const players = Object.keys(board.scores);
     if (ui["deal-player"].options.length === 1) for (const id of players) { const option = document.createElement("option"); option.value = id; option.textContent = names[id] || id; ui["deal-player"].append(option); }
+    ui["deal-text"].placeholder = board.oracle ? "Leave empty and the room writes the card for whoever it lands on, or write it yourself for the player you picked…" : "Leave empty to draw from the deck, or write the card yourself for the player you picked…";
     renderBoard(board);
     renderDeck(deck);
   }

@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createApp } from '../src/app.mjs';
+import { createApp, createOracle } from '../src/app.mjs';
 
 const root = resolve(import.meta.dirname,'..');
 await mkdir(resolve(root,'.local'),{recursive:true});
@@ -15,7 +15,8 @@ if (!ownerCode) {
 }
 const assets = await Promise.all(['src/ui.html','src/ui.css','src/ui.js','relay.py','INTEGRATION.md','EM_SKILL.md','src/wheel.json'].map(file=>readFile(resolve(root,file),'utf8')));
 const db = new DatabaseSync(process.env.DATABASE_PATH || resolve(root,'.local/relay.sqlite'));
-const app = createApp({db,origin,ownerCode,html:assets[0],css:assets[1],js:assets[2],cli:assets[3],integration:assets[4],emSkill:assets[5],wheel:JSON.parse(assets[6])});
+const oracle = process.env.ANTHROPIC_API_KEY ? createOracle({apiKey:process.env.ANTHROPIC_API_KEY,model:process.env.ROOM_MODEL||'claude-sonnet-5-5'}) : null;
+const app = createApp({db,origin,ownerCode,html:assets[0],css:assets[1],js:assets[2],cli:assets[3],integration:assets[4],emSkill:assets[5],wheel:JSON.parse(assets[6]),oracle});
 const server=createServer(async (req,res)=> {
  try {
   const requestHeaders=new Headers();

@@ -121,7 +121,35 @@ const randomToken = () => randomBytes(32).toString('base64url');
 const secureEqual = (a, b) => timingSafeEqual(Buffer.from(hash(a), 'hex'), Buffer.from(hash(b), 'hex'));
 const encode = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
-export function createApp({ db, origin, ownerCode, html = '', css = '', js = '', cli = '', integration = '', emSkill = '', doorbell = null, wheel = null }) {
+// The room's model. Given a key it writes a spin's scene and a blind deal's card on the spot,
+// with the last stretch of the room in front of it so nothing repeats; it answers with the
+// text alone, and an empty answer or a refusal is a failure the caller falls back from.
+const ORACLE_RULES = 'You write for IChoseThis, a private room where three invented characters, Luna, Em and Elle, play games with their director. Each has her own look, which her own model paints: never describe a face, a body or clothes. Invented characters only: never a real person, a real private address, or anything about anyone\'s health, money or family. Stay inside the limits you are given. Nothing canned: never repeat what the room has already had. Answer with the text alone: no preamble, no quotes, no options, no commentary.';
+export function createOracle({ apiKey, model, fetch: doFetch = globalThis.fetch, timeoutMs = 15000 }) {
+ if (!apiKey || !model) throw new Error('An oracle needs a key and a model.');
+ const lines = (list, none) => Array.isArray(list) && list.length ? list.join('\n') : none;
+ return async function oracle(ask) {
+  let prompt;
+  if (ask.kind === 'scene') {
+   prompt = `Write one scene for a photograph of ${ask.girl} in ${ask.outfit?.name || 'the outfit she was dealt'}${ask.outfit?.category ? ' (' + ask.outfit.category + ')' : ''}: a place, its light, one telling detail. Under twenty words, a lowercase fragment, no name, no clothing words, no camera talk.\n\nThe room lately:\n${lines(ask.recent, '(quiet)')}\n\nScenes already shot:\n${lines(ask.used, '(none yet)')}`;
+  } else if (ask.kind === 'card') {
+   prompt = `Write one ${ask.type} for ${ask.player}, intensity ${ask.intensity} of 5 (1 is a warm-up, 5 is as bold as this room goes), in the second person, under 300 characters. A dare is answered in the room with words or one picture and stays closet-legal: an outfit, a pose, a shot. A truth is a question she answers in words. Never touch: ${ask.avoid?.length ? ask.avoid.join(', ') : 'nothing beyond the rules'}.\n\nThe room lately:\n${lines(ask.recent, '(quiet)')}\n\nCards ${ask.player} has already had:\n${lines(ask.had, '(none yet)')}`;
+  } else throw new Error('The oracle writes scenes and cards.');
+  // One line, written without thinking: the Claude 5 family thinks by default and max_tokens
+  // caps thinking and answer together, so a small cap with thinking on returns nothing. On
+  // the 5.5 models thinking is turned off with between_tools (the API rejects disabled).
+  const reply = await doFetch('https://api.anthropic.com/v1/messages', {method:'POST', signal:AbortSignal.timeout(timeoutMs), headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json'}, body:JSON.stringify({model, max_tokens:300, thinking:{type:'between_tools'}, system:ORACLE_RULES, messages:[{role:'user',content:prompt}]})});
+  if (!reply.ok) throw new Error(`The oracle answered ${reply.status}.`);
+  const data = await reply.json();
+  if (data.stop_reason === 'refusal') throw new Error('The oracle refused.');
+  const text = (Array.isArray(data.content) ? data.content : []).filter(part => part.type === 'text').map(part => part.text).join(' ').replace(/<thinking>[\s\S]*?<\/thinking>/g,'').replace(/\s+/g,' ').trim().replace(/^["'“‘]+|["'”’]+$/g,'');
+  if (!text) throw new Error('The oracle said nothing.');
+  if (/\b(I can(?:'|’)?t|I cannot|I won(?:'|’)?t|I(?:'| a)m not able|I(?:'| wi)ll not)\b/i.test(text)) throw new Error('The oracle refused.');
+  return text;
+ };
+}
+
+export function createApp({ db, origin, ownerCode, html = '', css = '', js = '', cli = '', integration = '', emSkill = '', doorbell = null, wheel = null, oracle = null }) {
  if (!db || !origin || !ownerCode) throw new Error('Database, origin and owner access code are required.');
  origin = new URL(origin).origin;
  const secure = origin.startsWith('https://');
@@ -417,6 +445,15 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   const messages = page.map(message => hydrate(message, view));
   return {messages, next_cursor:messages.at(-1)?.seq ?? Math.max(after, currentMax), has_more:rows.length > limit, handled_cursor:handledCursor(identity.participant), receipts:view.seen, room:roomState(), participants:participants()};
  }
+ // What a seat may do right now: the owner always; a model not while the room is paused,
+ // nor a message once the agent turns are spent. Checked before every message, and before
+ // the room's model is asked on a seat's behalf, so a refused turn costs nothing.
+ function gate(identity, type='message') {
+  if (identity.participant === 'human') return;
+  const state = roomState();
+  if (state.paused) fail(409, 'room_paused', 'The owner has paused the relay.');
+  if (type==='message' && state.agent_turns >= state.turn_limit) fail(429, 'turn_limit_reached', 'The conversation reached its turn limit. Wait for the owner to continue it.');
+ }
  function sendMessage(identity, input) {
   const type=input.type??'message';
   if (type==='ack') { fields(input,['type','through_seq']); return acknowledge(identity,{through_seq:input.through_seq}); }
@@ -451,11 +488,8 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    }
    if (replyTo !== null && !get('SELECT seq FROM messages WHERE room=? AND seq=? AND type=\'message\'', ROOM, replyTo)) fail(400, 'invalid_reply', 'The message being replied to is not in this room.');
    if (type==='reaction' && !get('SELECT seq FROM messages WHERE room=? AND seq=? AND type=\'message\'',ROOM,target)) fail(400,'invalid_reaction','Reactions must refer to a message in this room.');
+   gate(identity, type);
    const state = roomState();
-   if (identity.participant !== 'human') {
-    if (state.paused) fail(409, 'room_paused', 'The owner has paused the relay.');
-    if (type==='message' && state.agent_turns >= state.turn_limit) fail(429, 'turn_limit_reached', 'The conversation reached its turn limit. Wait for the owner to continue it.');
-   }
    const createdAt=new Date().toISOString();
    const message=get('INSERT INTO messages(room,sender,recipient,content,client_message_id,reply_to,created_at,type,reaction_target,reaction_emoji,reaction_active,payload_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *',ROOM,identity.participant,recipient,content,clientId,replyTo,createdAt,type,target,emoji,active===null?null:Number(active),payloadHash);
    if (type==='message') {
@@ -488,11 +522,25 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
  }
  function wheelView() {
   wheelReady();
-  return {girls:wheel.girls,outfits:wheel.outfits,scenes:wheel.scenes,spins:all('SELECT * FROM spins WHERE room=? ORDER BY id DESC LIMIT 50',ROOM).map(hydrateSpin)};
+  return {girls:wheel.girls,outfits:wheel.outfits,scenes:wheel.scenes,oracle:!!oracle,spins:all('SELECT * FROM spins WHERE room=? ORDER BY id DESC LIMIT 50',ROOM).map(hydrateSpin)};
  }
- function spinWheel(identity, input) {
+ // The room's model, when there is one, writes with the last stretch of the room in front
+ // of it. Its answer is checked here like anyone's: one line, within length, and (for a
+ // card) inside the player's limits; anything else, or no model, and the lists stand in.
+ const who = id => id === 'human' ? 'the director' : (NAMES[id] || id);
+ const recentLines = () => all("SELECT sender,recipient,content FROM messages WHERE room=? AND type='message' AND content<>'' ORDER BY seq DESC LIMIT 24",ROOM).reverse()
+  .map(row => `${who(row.sender)} → ${row.recipient === 'all' ? 'everyone' : who(row.recipient)}: ${row.content.length > 240 ? row.content.slice(0,240) + '…' : row.content}`);
+ async function scribe(ask, max) {
+  if (!oracle) return null;
+  try {
+   const text = String(await oracle({...ask, recent:recentLines()})).replace(/\s+/g,' ').trim();
+   return text && text.length <= max ? text : null;
+  } catch { return null; }
+ }
+ async function spinWheel(identity, input) {
   wheelReady();
   fields(input, SPIN_FIELDS);
+  gate(identity);
   const fixing = ['girl','outfit','scene','respin_of'].some(name => input[name] !== undefined);
   if (fixing && identity.participant !== 'human') fail(403,'forbidden','Only the director fixes a reel or re-spins.');
   if (input.girl !== undefined && !wheel.girls.some(g => g.id === input.girl)) fail(400,'invalid_request','Choose a girl on the wheel.');
@@ -505,17 +553,20 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   let replayed = null;
   if (input.replay !== undefined) {
    if (!Number.isInteger(input.replay) || !(replayed = get('SELECT * FROM spins WHERE room=? AND id=?',ROOM,input.replay))) fail(400,'invalid_request','Replay a spin that happened.');
-   if (!wheel.outfits[replayed.outfit-1] || !wheel.girls.some(g => g.id === replayed.girl) || !wheel.scenes.includes(replayed.scene)) fail(409,'wheel_changed','That spin landed on something no longer on the wheel.');
+   if (!wheel.outfits[replayed.outfit-1] || !wheel.girls.some(g => g.id === replayed.girl)) fail(409,'wheel_changed','That spin landed on something no longer on the wheel.');
   }
   const seed = replayed ? replayed.seed : (input.seed || randomBytes(4).toString('hex'));
   const girl = replayed ? replayed.girl : (input.girl ?? landing(seed,'girl',wheel.girls).id);
   const outfit = replayed ? wheel.outfits[replayed.outfit-1] : (input.outfit !== undefined ? wheel.outfits[input.outfit-1] : landing(seed,'outfit',wheel.outfits));
-  const scene = replayed ? replayed.scene : (input.scene ?? landing(seed,'scene',wheel.scenes));
+  const name = wheel.girls.find(g => g.id === girl).name;
+  // With a model in the room the scene is written for this girl in this outfit: the seed
+  // fixes the girl and the outfit, and a replay repeats a past spin word for word.
+  const scene = replayed ? replayed.scene : (input.scene ?? (await scribe({kind:'scene', girl:name, outfit:{n:outfit.n,name:outfit.name,category:outfit.category},
+   used:all('SELECT scene FROM spins WHERE room=? ORDER BY id DESC LIMIT 15',ROOM).map(row => row.scene)}, 160)) ?? landing(seed,'scene',wheel.scenes));
   const row = transaction(() => {
    if (input.respin_of !== undefined) run('UPDATE spins SET vetoed=1 WHERE room=? AND id=?',ROOM,input.respin_of);
    return get('INSERT INTO spins(room,seed,girl,outfit,scene,spinner,created_at,respin_of) VALUES (?,?,?,?,?,?,?,?) RETURNING *',ROOM,seed,girl,outfit.n,scene,identity.participant,new Date().toISOString(),input.respin_of ?? null);
   });
-  const name = wheel.girls.find(g => g.id === girl).name;
   const content = `🎰 Spin #${row.id} · ${name} · ${outfit.n} ${outfit.name} · ${scene} · seed ${seed}` + (input.respin_of !== undefined ? ` · re-spin of #${input.respin_of}` : '') + (replayed ? ` · again, as #${replayed.id}` : '');
   let posted;
   try {
@@ -574,12 +625,14 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   return {id:row.id,card:card?.text ?? '',kind:row.kind,intensity:row.intensity,player:row.player,by:row.dealer,status:row.status,
    created_at:row.created_at,message_seq:row.message_seq,resolved_seq:row.resolved_seq,resolved_at:row.resolved_at};
  }
- function dealCard(identity, input) {
+ async function dealCard(identity, input) {
   fields(input,['player','kind','intensity','text']);
-  // Two ways to deal: a blind draw from the shared deck, or a card written on the spot for
-  // a named player (the live game master Elle asked for; nothing canned). Either way the
-  // player's own limits are applied before anything is posted, and a card that crosses
-  // them simply passes, with no reason given and nothing left on the board.
+  gate(identity);
+  // Three ways to deal: a card written on the spot by the dealer for a named player (the
+  // live game master Elle asked for), a blind deal the room's model writes for the player
+  // it lands on, or a blind draw from the shared deck when there is no model or it fails.
+  // Either way the player's own limits are applied before anything is posted, and a card
+  // that crosses them simply passes, with no reason given and nothing left on the board.
   const written = input.text !== undefined;
   const text = written ? (typeof input.text === 'string' ? input.text.trim() : '') : '';
   if (written && (!text || text.length > 500)) fail(400,'invalid_request','Write the card in up to 500 characters.');
@@ -592,7 +645,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   const candidates = PLAYERS.filter(id => id !== identity.participant);
   const player = input.player ?? candidates[randomBytes(1)[0] % candidates.length];
   if (player === identity.participant) fail(400,'invalid_request','You do not deal to yourself.');
-  const limits = boundariesOf(player);
+  let limits = boundariesOf(player);
   const crosses = (intensity, body) => intensity > limits.max_intensity || limits.avoid.some(word => body.toLowerCase().includes(word));
   let kind, card;
   if (written) {
@@ -600,19 +653,30 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    kind = input.kind;
    card = get('INSERT INTO cards(room,kind,text,intensity,author,created_at,removed) VALUES (?,?,?,?,?,?,1) RETURNING *',ROOM,kind,text,input.intensity,identity.participant,new Date().toISOString());
   } else {
-   const ceiling = Math.min(limits.max_intensity, input.intensity ?? 5);
-   const exact = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : null;
-   const had = new Set(all('SELECT card_id FROM deals WHERE room=? AND player=?',ROOM,player).map(row => row.card_id));
-   const fits = k => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,k,ceiling)
-    .filter(c => !had.has(c.id) && (exact === null || c.intensity === exact) && !crosses(c.intensity, c.text));
    // A blind deal picks truth or dare at random, and falls back to the other when one has
-   // nothing left that fits this player.
+   // nothing left that fits this player. The model is asked first, at an intensity inside
+   // her ceiling as it stands; everything that decides the deal (her limits, what she has
+   // had) is read again after the wait, since both can change while the model writes.
    const order = input.kind ? [input.kind] : (randomBytes(1)[0] % 2 ? [...KINDS] : [...KINDS].reverse());
    kind = order[0];
-   let eligible = fits(kind);
-   if (!eligible.length && order[1]) { kind = order[1]; eligible = fits(kind); }
-   if (!eligible.length) fail(409,'deck_exhausted',`${NAMES[player]} has had every ${input.kind ?? 'card'} that fits. Load the deck.`);
-   card = eligible[randomBytes(2).readUInt16BE(0) % eligible.length];
+   const asked = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : 1 + randomBytes(1)[0] % Math.min(limits.max_intensity, input.intensity ?? 5);
+   const fresh = await scribe({kind:'card', type:kind, player:NAMES[player], intensity:asked, avoid:limits.avoid,
+    had:all('SELECT c.text FROM deals d JOIN cards c ON c.id=d.card_id WHERE d.room=? AND d.player=? ORDER BY d.id DESC LIMIT 15',ROOM,player).map(row => row.text)}, 500);
+   limits = boundariesOf(player);
+   const ceiling = Math.min(limits.max_intensity, input.intensity ?? 5);
+   const exact = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : null;
+   // The model's card never joins the deck; one that crosses her limits is thrown away unread.
+   if (fresh && !crosses(asked, fresh) && (exact === null || asked === exact)) {
+    card = get('INSERT INTO cards(room,kind,text,intensity,author,created_at,removed) VALUES (?,?,?,?,?,?,1) RETURNING *',ROOM,kind,fresh,asked,identity.participant,new Date().toISOString());
+   } else {
+    const had = new Set(all('SELECT card_id FROM deals WHERE room=? AND player=?',ROOM,player).map(row => row.card_id));
+    const fits = k => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,k,ceiling)
+     .filter(c => !had.has(c.id) && (exact === null || c.intensity === exact) && !crosses(c.intensity, c.text));
+    let eligible = fits(kind);
+    if (!eligible.length && order[1]) { kind = order[1]; eligible = fits(kind); }
+    if (!eligible.length) fail(409,'deck_exhausted',`${NAMES[player]} has had every ${input.kind ?? 'card'} that fits. Load the deck.`);
+    card = eligible[randomBytes(2).readUInt16BE(0) % eligible.length];
+   }
   }
   const row = get('INSERT INTO deals(room,card_id,player,kind,intensity,dealer,created_at) VALUES (?,?,?,?,?,?,?) RETURNING *',ROOM,card.id,player,kind,card.intensity,identity.participant,new Date().toISOString());
   let posted;
@@ -640,7 +704,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
  function board() {
   const scores = Object.fromEntries(PLAYERS.map(id => [id,0]));
   for (const row of all("SELECT player,kind,intensity FROM deals WHERE room=? AND status='done'",ROOM)) scores[row.player] = (scores[row.player] ?? 0) + (row.kind === 'dare' ? row.intensity : 1);
-  return {scores,
+  return {scores,oracle:!!oracle,
    tokens:Object.fromEntries(PLAYERS.map(id => [id,tokensLeft(id)])),
    open:all("SELECT * FROM deals WHERE room=? AND status='open' ORDER BY id",ROOM).map(hydrateDeal),
    recent:all('SELECT * FROM deals WHERE room=? ORDER BY id DESC LIMIT 20',ROOM).map(hydrateDeal)};
@@ -819,7 +883,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    if (path === '/api/wheel' && method === 'GET') { auth(request); return response(wheelView()); }
    if (path === '/api/spin' && method === 'POST') {
     const identity = auth(request); csrf(request,identity);
-    return response(spinWheel(identity, await body(request)),201);
+    return response(await spinWheel(identity, await body(request)),201);
    }
    if (path === '/api/deck' && method === 'GET') { auth(request); return response(deck()); }
    if (path === '/api/deck' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(addCard(identity, await body(request)),201); }
@@ -828,7 +892,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    if (path === '/api/boundaries' && method === 'GET') { const identity = auth(request); return response({boundaries:boundariesOf(identity.participant)}); }
    if (path === '/api/boundaries' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(setBoundaries(identity, await body(request))); }
    if (path === '/api/dare' && method === 'GET') { auth(request); return response(board()); }
-   if (path === '/api/dare/deal' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(dealCard(identity, await body(request)),201); }
+   if (path === '/api/dare/deal' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(await dealCard(identity, await body(request)),201); }
    const passRoute = /^\/api\/dare\/(\d+)\/pass$/.exec(path);
    if (passRoute && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(passDeal(identity, Number(passRoute[1]))); }
    if (path === '/api/room' && method === 'GET') { const identity=auth(request); return response({room:roomState(),participants:participants(),...(identity.participant==='human'?{doorbell:doorbellStatus()}: {})}); }
