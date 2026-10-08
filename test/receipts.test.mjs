@@ -73,32 +73,44 @@ test('reading a page is seeing it: every seat that fetched a message is listed u
  assert.deepEqual(emBySeq[second.message.seq], ['human', 'luna'], 'the owner read it on the page above; Em wrote it and is not listed');
 });
 
-test('read cursors come back with every page so a page already on screen can show who has seen it since', async (t) => {
+test('seeing is per message: a seat that fetched only what was addressed to it has not seen the rest', async (t) => {
+ const f = fixture(t);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ const toElle = await json(await post(f, { cookie }, 'Elle only', 'elle'), 201);
+ const toAll = await json(await post(f, { cookie }, 'Everyone'), 201);
+ await json(await f.request(`${ROOM}/inbox?after=0`, { token: em }));          // Em's inbox holds only the second
+ const owner = await json(await f.request(`${ROOM}/transcript?after=0`, { cookie }));
+ const bySeq = Object.fromEntries(owner.messages.map(m => [m.seq, m.seen_by]));
+ assert.deepEqual(bySeq[toElle.message.seq], [], 'Em never fetched it');
+ assert.deepEqual(bySeq[toAll.message.seq], ['em']);
+});
+
+test('receipts for the recent stretch come back with every page, so a page already on screen learns who has seen it since', async (t) => {
  const f = fixture(t);
  const cookie = await login(f);
  const em = await key(f, cookie, 'em');
  await json(await post(f, { cookie }, 'one'), 201);
  await json(await post(f, { cookie }, 'two'), 201);
  const before = await json(await f.request(`${ROOM}/transcript?after=0`, { cookie }));
- assert.equal(before.read_cursors.em, 0);
- assert.equal(before.read_cursors.human, 2);
+ assert.deepEqual(before.receipts, {}, 'the owner wrote both; reading your own words is not a receipt');
  await json(await f.request(`${ROOM}/inbox?after=0&limit=1`, { token: em }));
  const after = await json(await f.request(`${ROOM}/transcript?after=2`, { cookie }));
  assert.deepEqual(after.messages, []);
- assert.equal(after.read_cursors.em, 1, 'Em saw only the one message her page held');
- assert.equal(after.read_cursors.luna, 0);
+ assert.deepEqual(after.receipts, { 1: ['em'] }, 'an empty page still carries the recent receipts');
 });
 
-test('a read cursor only moves forward, and an empty page moves nothing', async (t) => {
+test('a smaller later page unsees nothing, an empty page marks nothing, and a seat never sees its own words', async (t) => {
  const f = fixture(t);
  const cookie = await login(f);
  const em = await key(f, cookie, 'em');
- for (const content of ['a', 'b', 'c']) await json(await post(f, { cookie }, content), 201);
+ for (const content of ['a', 'b']) await json(await post(f, { cookie }, content), 201);
+ await json(await post(f, { token: em }, 'c'), 201);
  await json(await f.request(`${ROOM}/transcript?after=0`, { token: em }));
  await json(await f.request(`${ROOM}/transcript?after=0&limit=1`, { token: em }));
  await json(await f.request(`${ROOM}/transcript?after=3`, { token: em }));
  const view = await json(await f.request(`${ROOM}/transcript?after=0`, { cookie }));
- assert.equal(view.read_cursors.em, 3);
+ assert.deepEqual(view.receipts, { 1: ['em'], 2: ['em'], 3: ['human'] });
 });
 
 test('receipts survive a restart and reach Elle through her MCP tools', async (t) => {
@@ -112,7 +124,7 @@ test('receipts survive a restart and reach Elle through her MCP tools', async (t
  const read = await json(await mcp(f, elle, 'tools/call', { name: 'relay_read_inbox', arguments: { after: 0, limit: 20 } }, 2));
  const data = JSON.parse(read.result.content.find(c => c.type === 'text').text);
  assert.deepEqual(data.messages[0].seen_by, ['em']);
- assert.equal(data.read_cursors.em, posted.message.seq);
+ assert.deepEqual(data.receipts[String(posted.message.seq)], ['elle', 'em']);
  const owner = await json(await f.request(`${ROOM}/transcript?after=0`, { cookie }));
  assert.deepEqual(owner.messages[0].seen_by, ['elle', 'em'], 'Elle read it through MCP');
 });
@@ -120,7 +132,7 @@ test('receipts survive a restart and reach Elle through her MCP tools', async (t
 test('the page shows who has seen each message', () => {
  const js = readFileSync(resolve(ROOT, 'src/ui.js'), 'utf8');
  const css = readFileSync(resolve(ROOT, 'src/ui.css'), 'utf8');
- assert.match(js, /read_cursors/);
+ assert.match(js, /result\.receipts/);
  assert.match(js, /message-seen/);
  assert.match(css, /\.message-seen\{/);
 });

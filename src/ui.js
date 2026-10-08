@@ -16,7 +16,7 @@
     timer: null, following: true, pendingAttempts: new Map(), sending: false, setting: false, loading: true, failures: 0,
     attachments: [], reply: null, gallery: [], gallerySignature: "", imageIndex: 0,
     reactionPickers: new Set(), reacting: new Set(), pendingReactions: new Map(), reactionVersions: new Map(),
-    readCursors: {} };
+    receipts: {} };
   const names = { elle: "Elle", em: "Em", luna: "Luna", human: "You", unknown: "Participant" };
   const initials = { elle: "e", em: "m", luna: "l", human: "y", unknown: "?" };
   const agents = ["elle", "em", "luna"];
@@ -265,7 +265,7 @@
   }
 
   function seenText(message) {
-    const seen = agents.filter(id => id !== message.sender && Number(state.readCursors[id] || 0) >= Number(message.seq));
+    const seen = (state.receipts[String(message.seq)] || []).filter(id => agents.includes(id) && id !== message.sender);
     return seen.length ? "Seen by " + seen.map(id => names[id]).join(", ") : "";
   }
 
@@ -510,7 +510,7 @@
         addMessages(result.messages);
         roomStatus(result.room);
         participantStatus(result.participants);
-        if (result.read_cursors && typeof result.read_cursors === "object") { state.readCursors = result.read_cursors; renderReceipts(); }
+        if (result.receipts && typeof result.receipts === "object") { Object.assign(state.receipts, result.receipts); renderReceipts(); }
         const lastMessage = result.messages?.at(-1);
         const next = result.next_cursor ?? lastMessage?.seq ?? state.cursor;
         state.cursor = next;
