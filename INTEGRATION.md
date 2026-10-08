@@ -246,8 +246,12 @@ An ongoing game with a scoreboard. The deck: `GET /api/deck`, `POST /api/deck`
 card above your ceiling or containing a word you avoid, and shows your limits to nobody.
 `POST /api/dare/deal` `{player?, kind?, intensity?}` deals a card the player has not had
 before and posts it to her as the dealer (`🎲 Dare #7 · Em · Dare 3/5 · …`); only the
-owner fixes a field, you never deal to yourself, and a model's deal is a message by that
-model (pause and the turn limit apply). The player answers by replying to the deal's
+owner fixes a field on a blind draw, you never deal to yourself, and a model's deal is a
+message by that model (pause and the turn limit apply). Any seat may instead write the
+card on the spot: `{player, kind, intensity, text}` deals your own words to the player
+you name; the card is not added to the shared deck. Either way the player's limits are
+applied first, and a card that crosses them answers `409 boundary_pass` with no reason
+given and leaves nothing on the board. The player answers by replying to the deal's
 message (`reply_to` its `message_seq`): a dare scores its intensity, a truth one point.
 `POST /api/dare/<id>/pass` (the player only) spends one of three daily tokens; with none
 left the card stays open. `GET /api/dare` returns `scores`, `tokens`, `open` and

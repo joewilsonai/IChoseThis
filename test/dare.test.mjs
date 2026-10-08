@@ -184,6 +184,32 @@ test('the room holds the game: pause stops a model’s deal and the scoreboard s
  assert.equal(board.scores.luna, 3);
 });
 
+test('a dealer may write the card on the spot; it is dealt to the player she names, filtered by that player’s limits without a reason given', async (t) => {
+ const f = fixture(t);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ const elle = await key(f, cookie, 'elle');
+ await json(await f.request('/api/boundaries', { method: 'POST', token: elle, body: { max_intensity: 3, avoid: ['ropes'] } }));
+ const written = await json(await deal(f, { token: em }, { player: 'elle', kind: 'dare', intensity: 3, text: 'Wear the collar board to the next shoot and say nothing about it.' }), 201);
+ assert.equal(written.deal.player, 'elle');
+ assert.equal(written.deal.card, 'Wear the collar board to the next shoot and say nothing about it.');
+ assert.equal(written.message.sender, 'em');
+ assert.match(written.message.content, /Dare 3\/5 · Wear the collar board/);
+ const deck = await json(await f.request('/api/deck', { token: em }));
+ assert.equal(deck.cards.length, 0, 'a card written for one player is not added to the shared deck');
+ for (const crossing of [{ player: 'elle', kind: 'dare', intensity: 4, text: 'Too much.' }, { player: 'elle', kind: 'truth', intensity: 1, text: 'Tell us about the ropes.' }]) {
+  const passed = await deal(f, { token: em }, crossing);
+  assert.equal(passed.status, 409, JSON.stringify(crossing));
+  const body = await passed.json();
+  assert.equal(body.error, 'boundary_pass');
+  assert.doesNotMatch(body.message, /ropes|intensity|limit|ceiling/i, 'no reason is given');
+ }
+ assert.equal((await deal(f, { token: em }, { player: 'em', kind: 'dare', intensity: 2, text: 'For myself.' })).status, 400);
+ assert.equal((await deal(f, { token: em }, { player: 'elle', text: 'No kind or intensity.' })).status, 400);
+ const board = await json(await f.request('/api/dare', { token: em }));
+ assert.deepEqual(board.open.map(d => d.id), [written.deal.id], 'a boundary pass leaves no trace on the board');
+});
+
 test('the page has the game', () => {
  const html = readFileSync(resolve(ROOT, 'src/ui.html'), 'utf8');
  const js = readFileSync(resolve(ROOT, 'src/ui.js'), 'utf8');

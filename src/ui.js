@@ -14,7 +14,7 @@
     "spin-button", "spin-dialog", "spin-go", "spin-again", "spin-result", "spin-album", "reel-girl", "reel-outfit", "reel-scene",
     "fix-girl", "fix-outfit", "fix-scene", "director-controls", "close-spin",
     "dare-button", "dare-dialog", "close-dare", "scoreboard", "deal-player", "deal-kind", "deal-intensity", "dare-deal",
-    "dare-status", "dare-open", "card-kind", "card-intensity", "card-text", "card-add", "deck-list", "dare-recent"
+    "dare-status", "dare-open", "card-kind", "card-intensity", "card-text", "card-add", "deck-list", "dare-recent", "deal-text"
   ].map((id) => [id, byId(id)]));
   const state = { authenticated: false, cursor: 0, messages: new Map(), room: null, polling: false,
     timer: null, following: true, pendingAttempts: new Map(), sending: false, setting: false, loading: true, failures: 0,
@@ -934,8 +934,10 @@
     if (ui["deal-player"].value) body.player = ui["deal-player"].value;
     if (ui["deal-kind"].value) body.kind = ui["deal-kind"].value;
     if (ui["deal-intensity"].value) body.intensity = Number(ui["deal-intensity"].value);
+    if (ui["deal-text"].value.trim()) body.text = ui["deal-text"].value.trim();
     try {
       const result = await request("/api/dare/deal", { method: "POST", body: JSON.stringify(body) });
+      ui["deal-text"].value = "";
       ui["dare-status"].textContent = "Dealt to " + (names[result.deal.player] || result.deal.player) + ": " + result.deal.card;
       await loadGame();
       schedulePoll(0);

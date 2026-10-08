@@ -575,9 +575,17 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    created_at:row.created_at,message_seq:row.message_seq,resolved_seq:row.resolved_seq,resolved_at:row.resolved_at};
  }
  function dealCard(identity, input) {
-  fields(input,['player','kind','intensity']);
+  fields(input,['player','kind','intensity','text']);
+  // Two ways to deal: a blind draw from the shared deck, or a card written on the spot for
+  // a named player (the live game master Elle asked for; nothing canned). Either way the
+  // player's own limits are applied before anything is posted, and a card that crosses
+  // them simply passes, with no reason given and nothing left on the board.
+  const written = input.text !== undefined;
+  const text = written ? (typeof input.text === 'string' ? input.text.trim() : '') : '';
+  if (written && (!text || text.length > 500)) fail(400,'invalid_request','Write the card in up to 500 characters.');
+  if (written && (input.player === undefined || input.kind === undefined || input.intensity === undefined)) fail(400,'invalid_request','A written card names its player, its kind and its intensity.');
   const fixing = ['player','kind','intensity'].some(name => input[name] !== undefined);
-  if (fixing && identity.participant !== 'human') fail(403,'forbidden','Only the director picks; everyone else deals blind.');
+  if (fixing && !written && identity.participant !== 'human') fail(403,'forbidden','Only the director picks a blind draw; everyone else deals blind, or writes the card.');
   if (input.player !== undefined && !PLAYERS.includes(input.player)) fail(400,'invalid_request','Deal to Elle, Em or Luna.');
   if (input.kind !== undefined && !KINDS.includes(input.kind)) fail(400,'invalid_request','Truth or dare.');
   if (input.intensity !== undefined && (!Number.isInteger(input.intensity) || input.intensity < 1 || input.intensity > 5)) fail(400,'invalid_request','Intensity runs from 1 to 5.');
@@ -585,18 +593,27 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   const player = input.player ?? candidates[randomBytes(1)[0] % candidates.length];
   if (player === identity.participant) fail(400,'invalid_request','You do not deal to yourself.');
   const limits = boundariesOf(player);
-  const ceiling = Math.min(limits.max_intensity, input.intensity ?? 5);
-  const exact = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : null;
-  const had = new Set(all('SELECT card_id FROM deals WHERE room=? AND player=?',ROOM,player).map(row => row.card_id));
-  const fits = kind => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,kind,ceiling)
-   .filter(card => !had.has(card.id) && (exact === null || card.intensity === exact) && !limits.avoid.some(word => card.text.toLowerCase().includes(word)));
-  // A blind deal picks truth or dare at random, and falls back to the other when one has
-  // nothing left that fits this player.
-  const order = input.kind ? [input.kind] : (randomBytes(1)[0] % 2 ? [...KINDS] : [...KINDS].reverse());
-  let kind = order[0], eligible = fits(kind);
-  if (!eligible.length && order[1]) { kind = order[1]; eligible = fits(kind); }
-  if (!eligible.length) fail(409,'deck_exhausted',`${NAMES[player]} has had every ${input.kind ?? 'card'} that fits. Load the deck.`);
-  const card = eligible[randomBytes(2).readUInt16BE(0) % eligible.length];
+  const crosses = (intensity, body) => intensity > limits.max_intensity || limits.avoid.some(word => body.toLowerCase().includes(word));
+  let kind, card;
+  if (written) {
+   if (crosses(input.intensity, text)) fail(409,'boundary_pass',`${NAMES[player]} passed on that one.`);
+   kind = input.kind;
+   card = get('INSERT INTO cards(room,kind,text,intensity,author,created_at,removed) VALUES (?,?,?,?,?,?,1) RETURNING *',ROOM,kind,text,input.intensity,identity.participant,new Date().toISOString());
+  } else {
+   const ceiling = Math.min(limits.max_intensity, input.intensity ?? 5);
+   const exact = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : null;
+   const had = new Set(all('SELECT card_id FROM deals WHERE room=? AND player=?',ROOM,player).map(row => row.card_id));
+   const fits = k => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,k,ceiling)
+    .filter(c => !had.has(c.id) && (exact === null || c.intensity === exact) && !crosses(c.intensity, c.text));
+   // A blind deal picks truth or dare at random, and falls back to the other when one has
+   // nothing left that fits this player.
+   const order = input.kind ? [input.kind] : (randomBytes(1)[0] % 2 ? [...KINDS] : [...KINDS].reverse());
+   kind = order[0];
+   let eligible = fits(kind);
+   if (!eligible.length && order[1]) { kind = order[1]; eligible = fits(kind); }
+   if (!eligible.length) fail(409,'deck_exhausted',`${NAMES[player]} has had every ${input.kind ?? 'card'} that fits. Load the deck.`);
+   card = eligible[randomBytes(2).readUInt16BE(0) % eligible.length];
+  }
   const row = get('INSERT INTO deals(room,card_id,player,kind,intensity,dealer,created_at) VALUES (?,?,?,?,?,?,?) RETURNING *',ROOM,card.id,player,kind,card.intensity,identity.participant,new Date().toISOString());
   let posted;
   try {
