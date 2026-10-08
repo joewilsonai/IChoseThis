@@ -172,7 +172,9 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
  function seenMap(fromSeq) {
   const map={};
   const recent=new Date(Date.now()-RECEIPT_RECENT_MS).toISOString();
-  for (const row of all('SELECT seq,participant FROM seen WHERE room=? AND (seq>=? OR created_at>=?)',ROOM,fromSeq,recent)) (map[row.seq] ??= []).push(row.participant);
+  // Pick the messages that qualify (in the window, or read recently), then every reader
+  // they have: a partial list would read as a complete one.
+  for (const row of all('SELECT seq,participant FROM seen WHERE room=? AND seq IN (SELECT seq FROM seen WHERE room=? AND (seq>=? OR created_at>=?))',ROOM,ROOM,fromSeq,recent)) (map[row.seq] ??= []).push(row.participant);
   for (const seats of Object.values(map)) seats.sort(bySeat);
   return map;
  }

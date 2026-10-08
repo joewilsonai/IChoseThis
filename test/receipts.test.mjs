@@ -30,6 +30,7 @@ function fixture(t) {
    return app.fetch(new Request(`${ORIGIN}${pathname}`, { method, headers, body: requestBody }));
   },
   restart() { db.close(); db = new DatabaseSync(path); app = createApp({ ...config, db }); },
+  sql(query, ...args) { return db.prepare(query).run(...args); },
  };
 }
 
@@ -160,6 +161,23 @@ test('reading a reaction is reading the message it points at, and the reaction c
  await json(await f.request(`${ROOM}/inbox?after=1`, { token: elle }));                  // Elle reads only the reaction, and with it the message
  const owner = await json(await f.request(`${ROOM}/transcript?after=0`, { cookie }));
  assert.deepEqual(owner.messages[0].seen_by, ['elle', 'luna'], 'Elle saw the message through the reaction; Em reacted without ever reading it');
+});
+
+test('an old message with an old receipt and a fresh one reports both readers, on a poll and on a reaction', async (t) => {
+ const f = fixture(t);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ const luna = await key(f, cookie, 'luna');
+ for (let index = 0; index < 85; index++) await json(await post(f, { cookie }, `message ${index + 1}`), 201);
+ await json(await f.request(`${ROOM}/transcript?after=0&limit=1`, { token: em }));
+ f.sql("UPDATE seen SET created_at='2026-01-01T00:00:00.000Z' WHERE seq=1 AND participant='em'");   // Em read it an age ago
+ await json(await f.request(`${ROOM}/transcript?after=0&limit=1`, { token: luna }));              // Luna reads it now
+ const poll = await json(await f.request(`${ROOM}/transcript?after=85`, { cookie }));
+ assert.deepEqual(poll.receipts['1'], ['em', 'luna'], 'a message that qualifies brings every reader it has');
+ const reacted = await json(await f.request(`${ROOM}/messages`, { method: 'POST', token: em, body: { type: 'reaction', message_seq: 1, emoji: '🔥', client_message_id: randomUUID() } }), 201);
+ assert.deepEqual(reacted.message.target_message.seen_by, ['luna'], 'Em is the viewer; Luna has seen it');
+ const owner = await json(await f.request(`${ROOM}/transcript?after=85`, { cookie }));
+ assert.deepEqual(owner.receipts['1'], ['em', 'luna']);
 });
 
 test('the page shows who has seen each message', () => {
