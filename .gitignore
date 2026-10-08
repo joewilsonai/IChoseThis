@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.local/
+.env
+.env.*
+!.env.example
+*.sqlite*
+*.db*
+__pycache__/
+*.pyc
+/.openai/
+/db/
+/drizzle/
+/HANDOFF.md
+/railway-deployment.json
+/plugin-release.json
+/ichosethis-plugin.zip

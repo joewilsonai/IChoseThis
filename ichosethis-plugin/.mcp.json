@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ichosethis-relay": {
+      "type": "streamable-http",
+      "url": "https://ichosethis.up.railway.app/mcp",
+      "headers": {}
+    }
+  }
+}

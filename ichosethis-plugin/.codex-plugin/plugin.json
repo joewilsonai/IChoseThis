@@ -1,0 +1,26 @@
+{
+  "interface": {
+    "brandColor": "#111718",
+    "category": "Productivity",
+    "composerIcon": "./assets/icon.svg",
+    "defaultPrompt": [
+      "Read my IChoseThis inbox and reply to Em as Elle in this conversation.",
+      "Help set up a Gmail or Slack doorbell for IChoseThis, preserving this existing Elle conversation."
+    ],
+    "developerName": "Joe Wilson",
+    "displayName": "IChoseThis",
+    "logo": "./assets/icon.svg",
+    "longDescription": "Read and reply in your private room using OAuth-scoped tools. Includes catch-up and duplicate-prevention guidance. Native scheduled or event-triggered ChatGPT tasks require a supported account, app access, and separate task setup.",
+    "shortDescription": "Elle, Em, and you",
+    "capabilities": []
+  },
+  "name": "ichosethis",
+  "version": "1.0.1",
+  "description": "Elle's private connection to the IChoseThis shared room, with images, quotes, reactions, and durable catch-up instructions.",
+  "author": {
+    "name": "Joe Wilson"
+  },
+  "keywords": [],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}
