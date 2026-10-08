@@ -167,17 +167,34 @@ test('the limits that count are the ones at the moment of dealing, not when the 
  assert.equal(dealt.deal.intensity, 1);
 });
 
-test('a fallback draw sees the deals made while the model was writing', async (t) => {
- let f, cookie, nested = false;
- const oracle = async () => {
-  if (!nested) { nested = true; await json(await f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } }), 201); }
-  throw new Error('model down');
- };
- f = fixture(t, oracle); cookie = await login(f);
+test('spins and deals take their turn one at a time: a race at the turn limit asks the model once, and one card is dealt once', async (t) => {
+ let release;
+ const held = new Promise(resolve => { release = resolve; });
+ const oracle = recorder({ scene: async () => { await held; return 'somewhere quiet'; }, card: new Error('model down') });
+ const f = fixture(t, oracle);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ await json(await f.request('/api/room', { method: 'POST', cookie, body: { turn_limit: 1 } }));
+ const spins = [1, 2, 3].map(() => f.request('/api/spin', { method: 'POST', token: em, body: {} }));
+ await new Promise(resolve => setTimeout(resolve, 20));
+ release();
+ assert.deepEqual((await Promise.all(spins)).map(r => r.status).sort(), [201, 429, 429]);
+ assert.equal(oracle.calls.length, 1, 'the two spins refused at the limit never asked the model');
+ await json(await f.request('/api/room', { method: 'POST', cookie, body: { turn_limit: 20 } }));
  await json(await f.request('/api/deck', { method: 'POST', cookie, body: { kind: 'truth', text: 'The only one.', intensity: 1 } }), 201);
- const outer = await f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } });
- assert.equal(outer.status, 409, 'the one card went in the nested deal; dealing it again is a repeat');
- assert.equal((await outer.json()).error, 'deck_exhausted');
+ const deals = await Promise.all([1, 2].map(() => f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } })));
+ assert.deepEqual(deals.map(r => r.status).sort(), [201, 409], 'the one card went once');
+});
+
+test('a card the model has written for her before is a repeat, and the deck stands in', async (t) => {
+ const oracle = recorder({ card: 'The same question, again.' });
+ const f = fixture(t, oracle);
+ const cookie = await login(f);
+ await json(await f.request('/api/deck', { method: 'POST', cookie, body: { kind: 'truth', text: 'From the deck instead.', intensity: 1 } }), 201);
+ const first = await json(await f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } }), 201);
+ assert.equal(first.deal.card, 'The same question, again.');
+ const second = await json(await f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } }), 201);
+ assert.equal(second.deal.card, 'From the deck instead.');
 });
 
 test('a paused room, or a seat out of turns, asks the model nothing', async (t) => {

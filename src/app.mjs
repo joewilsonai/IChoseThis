@@ -125,7 +125,7 @@ const encode = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;',
 // with the last stretch of the room in front of it so nothing repeats; it answers with the
 // text alone, and an empty answer or a refusal is a failure the caller falls back from.
 const ORACLE_RULES = 'You write for IChoseThis, a private room where three invented characters, Luna, Em and Elle, play games with their director. Each has her own look, which her own model paints: never describe a face, a body or clothes. Invented characters only: never a real person, a real private address, or anything about anyone\'s health, money or family. Stay inside the limits you are given. Nothing canned: never repeat what the room has already had. Answer with the text alone: no preamble, no quotes, no options, no commentary.';
-export function createOracle({ apiKey, model, fetch: doFetch = globalThis.fetch, timeoutMs = 15000 }) {
+export function createOracle({ apiKey, model, fetch: doFetch = globalThis.fetch, timeoutMs = 8000 }) {
  if (!apiKey || !model) throw new Error('An oracle needs a key and a model.');
  const lines = (list, none) => Array.isArray(list) && list.length ? list.join('\n') : none;
  return async function oracle(ask) {
@@ -535,9 +535,15 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   try {
    const text = String(await oracle({...ask, recent:recentLines()})).replace(/\s+/g,' ').trim();
    return text && text.length <= max ? text : null;
-  } catch { return null; }
+  } catch (error) { console.error('oracle:', error?.message || error); return null; }
  }
- async function spinWheel(identity, input) {
+ // Spins and deals go one at a time, each waiting for the one before it, so a race at the
+ // turn limit asks the model once and one card is dealt once.
+ let queue = Promise.resolve();
+ const inTurn = work => { const next = queue.then(work); queue = next.catch(() => {}); return next; };
+ const spinWheel = (identity, input) => inTurn(() => spinNow(identity, input));
+ const dealCard = (identity, input) => inTurn(() => dealNow(identity, input));
+ async function spinNow(identity, input) {
   wheelReady();
   fields(input, SPIN_FIELDS);
   gate(identity);
@@ -625,7 +631,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   return {id:row.id,card:card?.text ?? '',kind:row.kind,intensity:row.intensity,player:row.player,by:row.dealer,status:row.status,
    created_at:row.created_at,message_seq:row.message_seq,resolved_seq:row.resolved_seq,resolved_at:row.resolved_at};
  }
- async function dealCard(identity, input) {
+ async function dealNow(identity, input) {
   fields(input,['player','kind','intensity','text']);
   gate(identity);
   // Three ways to deal: a card written on the spot by the dealer for a named player (the
@@ -665,11 +671,14 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    limits = boundariesOf(player);
    const ceiling = Math.min(limits.max_intensity, input.intensity ?? 5);
    const exact = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : null;
-   // The model's card never joins the deck; one that crosses her limits is thrown away unread.
-   if (fresh && !crosses(asked, fresh) && (exact === null || asked === exact)) {
+   const dealtBefore = all('SELECT d.card_id, c.text FROM deals d JOIN cards c ON c.id=d.card_id WHERE d.room=? AND d.player=?',ROOM,player);
+   const had = new Set(dealtBefore.map(row => row.card_id));
+   const plain = body => body.toLowerCase().replace(/\s+/g,' ').replace(/[.!?…]+$/,'').trim();
+   // The model's card never joins the deck; one that crosses her limits, or that she has had
+   // before in those words, is thrown away unread.
+   if (fresh && !crosses(asked, fresh) && (exact === null || asked === exact) && !dealtBefore.some(row => plain(row.text) === plain(fresh))) {
     card = get('INSERT INTO cards(room,kind,text,intensity,author,created_at,removed) VALUES (?,?,?,?,?,?,1) RETURNING *',ROOM,kind,fresh,asked,identity.participant,new Date().toISOString());
    } else {
-    const had = new Set(all('SELECT card_id FROM deals WHERE room=? AND player=?',ROOM,player).map(row => row.card_id));
     const fits = k => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,k,ceiling)
      .filter(c => !had.has(c.id) && (exact === null || c.intensity === exact) && !crosses(c.intensity, c.text));
     let eligible = fits(kind);
