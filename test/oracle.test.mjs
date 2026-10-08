@@ -195,6 +195,11 @@ test('a card the model has written for her before is a repeat, and the deck stan
  assert.equal(first.deal.card, 'The same question, again.');
  const second = await json(await f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } }), 201);
  assert.equal(second.deal.card, 'From the deck instead.');
+ // A deck card in the same words as one she has had is a repeat too, whatever its id.
+ await json(await f.request('/api/deck', { method: 'POST', cookie, body: { kind: 'truth', text: 'The same question, again.', intensity: 1 } }), 201);
+ const third = await f.request('/api/dare/deal', { method: 'POST', cookie, body: { player: 'em', kind: 'truth' } });
+ assert.equal(third.status, 409, 'the deck card repeats the model’s words she already had');
+ assert.equal((await third.json()).error, 'deck_exhausted');
 });
 
 test('a paused room, or a seat out of turns, asks the model nothing', async (t) => {

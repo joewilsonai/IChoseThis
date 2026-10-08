@@ -680,7 +680,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
     card = get('INSERT INTO cards(room,kind,text,intensity,author,created_at,removed) VALUES (?,?,?,?,?,?,1) RETURNING *',ROOM,kind,fresh,asked,identity.participant,new Date().toISOString());
    } else {
     const fits = k => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,k,ceiling)
-     .filter(c => !had.has(c.id) && (exact === null || c.intensity === exact) && !crosses(c.intensity, c.text));
+     .filter(c => !had.has(c.id) && !dealtBefore.some(row => plain(row.text) === plain(c.text)) && (exact === null || c.intensity === exact) && !crosses(c.intensity, c.text));
     let eligible = fits(kind);
     if (!eligible.length && order[1]) { kind = order[1]; eligible = fits(kind); }
     if (!eligible.length) fail(409,'deck_exhausted',`${NAMES[player]} has had every ${input.kind ?? 'card'} that fits. Load the deck.`);
