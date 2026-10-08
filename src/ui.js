@@ -924,6 +924,7 @@
   async function openGame() {
     ui["dare-status"].textContent = "";
     ui["dare-dialog"].showModal();
+    watchGame();
     try { await loadGame(); }
     catch (error) { ui["dare-status"].textContent = error.message; }
   }
@@ -939,13 +940,23 @@
       const result = await request("/api/dare/deal", { method: "POST", body: JSON.stringify(body) });
       ui["deal-text"].value = "";
       ui["dare-status"].textContent = "Dealt to " + (names[result.deal.player] || result.deal.player) + ": " + result.deal.card;
-      await loadGame();
       schedulePoll(0);
+      // The card is dealt whatever happens to the refresh; a failed refresh must not read
+      // as a failed deal, or the next click deals a second card.
+      try { await loadGame(); }
+      catch (error) { ui["dare-status"].textContent += " (The board did not refresh: " + error.message + ")"; }
     } catch (error) {
       ui["dare-status"].textContent = error.message;
     } finally {
       ui["dare-deal"].disabled = false;
     }
+  }
+
+  // Answers, passes and deals by the others arrive while the board is open; keep it current.
+  let gameTimer = null;
+  function watchGame() {
+    window.clearInterval(gameTimer);
+    gameTimer = window.setInterval(() => { if (ui["dare-dialog"].open && state.authenticated) loadGame().catch(() => {}); else window.clearInterval(gameTimer); }, 5000);
   }
 
   async function addCard() {

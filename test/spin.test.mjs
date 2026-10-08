@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -13,6 +13,8 @@ const ROOM = '/api/rooms/elle-em';
 const ROOT = resolve(import.meta.dirname, '..');
 const WHEEL = JSON.parse(readFileSync(resolve(ROOT, 'src/wheel.json'), 'utf8'));
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+// The wheel's landing rule, restated here so a test can say where a seed must land.
+const require_sha = text => createHash('sha256').update(text).digest('hex').slice(0, 8);
 
 function fixture(t, wheel = WHEEL) {
  const dir = mkdtempSync(join(tmpdir(), 'spin-test-'));
@@ -98,7 +100,10 @@ test('a replay lands exactly where a past spin landed, fixed reels included, and
  const em = await key(f, cookie, 'em');
  const fixed = (await json(await spin(f, { cookie }, { girl: 'luna', outfit: 19, scene: WHEEL.scenes[3] }), 201)).spin;
  const bySeed = (await json(await spin(f, { cookie }, { seed: fixed.seed }), 201)).spin;
- assert.notDeepEqual([bySeed.girl, bySeed.outfit.n, bySeed.scene], ['luna', 19, WHEEL.scenes[3]], 'the seed alone replays only the reels left to chance');
+ assert.deepEqual([bySeed.girl, bySeed.outfit.n, bySeed.scene].map(String), [fixed.seed, fixed.seed, fixed.seed].map((seed, i) => String([
+  WHEEL.girls[parseInt(require_sha(seed + ':girl'), 16) % WHEEL.girls.length].id,
+  WHEEL.outfits[parseInt(require_sha(seed + ':outfit'), 16) % WHEEL.outfits.length].n,
+  WHEEL.scenes[parseInt(require_sha(seed + ':scene'), 16) % WHEEL.scenes.length]][i])), 'the seed alone replays only the reels left to chance: it lands where the seed says, not where the director pointed');
  const replay = await json(await spin(f, { token: em }, { replay: fixed.id }), 201);
  assert.deepEqual([replay.spin.girl, replay.spin.outfit.n, replay.spin.scene, replay.spin.seed], ['luna', 19, WHEEL.scenes[3], fixed.seed]);
  assert.match(replay.message.content, new RegExp(`again, as #${fixed.id}$`));
