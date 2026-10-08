@@ -83,6 +83,28 @@ CREATE TABLE IF NOT EXISTS spins (
  spinner TEXT NOT NULL, created_at TEXT NOT NULL, message_seq INTEGER REFERENCES messages(seq),
  respin_of INTEGER REFERENCES spins(id), vetoed INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS cards (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL REFERENCES room(id),
+ kind TEXT NOT NULL CHECK(kind IN ('truth','dare')), text TEXT NOT NULL,
+ intensity INTEGER NOT NULL CHECK(intensity BETWEEN 1 AND 5), author TEXT NOT NULL,
+ created_at TEXT NOT NULL, removed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS boundaries (
+ room TEXT NOT NULL REFERENCES room(id), participant TEXT NOT NULL,
+ max_intensity INTEGER NOT NULL DEFAULT 5, avoid TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL,
+ PRIMARY KEY(room,participant)
+);
+CREATE TABLE IF NOT EXISTS deals (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL REFERENCES room(id),
+ card_id INTEGER NOT NULL REFERENCES cards(id), player TEXT NOT NULL, kind TEXT NOT NULL,
+ intensity INTEGER NOT NULL, dealer TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+ created_at TEXT NOT NULL, message_seq INTEGER REFERENCES messages(seq),
+ resolved_seq INTEGER, resolved_at TEXT
+);
+CREATE TABLE IF NOT EXISTS passes (
+ room TEXT NOT NULL REFERENCES room(id), participant TEXT NOT NULL, day TEXT NOT NULL,
+ used INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(room,participant,day)
+);
 CREATE TABLE IF NOT EXISTS doorbell_outbox (
  seq INTEGER PRIMARY KEY REFERENCES messages(seq), status TEXT NOT NULL DEFAULT 'pending',
  attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
@@ -439,6 +461,8 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
    if (type==='message') {
     for (const [index,image] of images.entries()) run('INSERT INTO images(id,message_seq,ordinal,mime_type,filename,size,sha256,data,created_at) VALUES (?,?,?,?,?,?,?,?,?)',randomBytes(16).toString('hex'),message.seq,index,image.mime_type,image.filename,image.size,image.sha256,image.data,createdAt);
     run('UPDATE room SET agent_turns=? WHERE id=?',identity.participant==='human'?0:state.agent_turns+1,ROOM);
+    // A player's reply to a deal is the answer: the card is done and scores.
+    if (replyTo!==null) run("UPDATE deals SET status='done',resolved_seq=?,resolved_at=? WHERE room=? AND message_seq=? AND player=? AND status='open'",message.seq,createdAt,ROOM,replyTo,identity.participant);
     if (doorbell && state.doorbell_enabled && !state.paused && identity.participant!=='elle' && ['elle','all'].includes(recipient)) run('INSERT INTO doorbell_outbox(seq) VALUES (?)',message.seq);
    } else if (active) {
     run('INSERT INTO reactions(message_seq,participant,emoji,created_at,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(message_seq,participant,emoji) DO UPDATE SET updated_at=excluded.updated_at',target,identity.participant,emoji,createdAt,createdAt);
@@ -449,7 +473,7 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
  // The wheel: three reels, girl, outfit, scene. It lands on three words and posts them to
  // the girl it landed on, so her camera wakes; it never writes a prompt. Every spin keeps
  // its seed, so a lucky one can be made twice. The director fixes reels and re-spins.
- const SPIN_FIELDS = ['girl','outfit','scene','seed','respin_of'];
+ const SPIN_FIELDS = ['girl','outfit','scene','seed','respin_of','replay'];
  const wheelReady = () => { if (!wheel || !Array.isArray(wheel.girls) || !Array.isArray(wheel.outfits) || !Array.isArray(wheel.scenes) || !wheel.girls.length || !wheel.outfits.length || !wheel.scenes.length) fail(503,'no_wheel','The wheel has no rack yet.'); };
  const landing = (seed, reel, choices) => choices[parseInt(createHash('sha256').update(seed+':'+reel).digest('hex').slice(0,8),16) % choices.length];
  function spinPictures(seq) {
@@ -476,16 +500,23 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   if (input.scene !== undefined && !wheel.scenes.includes(input.scene)) fail(400,'invalid_request','Choose a scene on the wheel.');
   if (input.seed !== undefined && !/^[a-f0-9]{8}$/.test(String(input.seed))) fail(400,'invalid_request','A seed is eight hex characters.');
   if (input.respin_of !== undefined && (!Number.isInteger(input.respin_of) || !get('SELECT id FROM spins WHERE room=? AND id=?',ROOM,input.respin_of))) fail(400,'invalid_request','Re-spin a spin that happened.');
-  const seed = input.seed || randomBytes(4).toString('hex');
-  const girl = input.girl ?? landing(seed,'girl',wheel.girls).id;
-  const outfit = input.outfit !== undefined ? wheel.outfits[input.outfit-1] : landing(seed,'outfit',wheel.outfits);
-  const scene = input.scene ?? landing(seed,'scene',wheel.scenes);
+  // A replay lands exactly where a past spin landed, fixed reels included: the seed alone
+  // only replays the reels that were left to chance.
+  let replayed = null;
+  if (input.replay !== undefined) {
+   if (!Number.isInteger(input.replay) || !(replayed = get('SELECT * FROM spins WHERE room=? AND id=?',ROOM,input.replay))) fail(400,'invalid_request','Replay a spin that happened.');
+   if (!wheel.outfits[replayed.outfit-1] || !wheel.girls.some(g => g.id === replayed.girl) || !wheel.scenes.includes(replayed.scene)) fail(409,'wheel_changed','That spin landed on something no longer on the wheel.');
+  }
+  const seed = replayed ? replayed.seed : (input.seed || randomBytes(4).toString('hex'));
+  const girl = replayed ? replayed.girl : (input.girl ?? landing(seed,'girl',wheel.girls).id);
+  const outfit = replayed ? wheel.outfits[replayed.outfit-1] : (input.outfit !== undefined ? wheel.outfits[input.outfit-1] : landing(seed,'outfit',wheel.outfits));
+  const scene = replayed ? replayed.scene : (input.scene ?? landing(seed,'scene',wheel.scenes));
   const row = transaction(() => {
    if (input.respin_of !== undefined) run('UPDATE spins SET vetoed=1 WHERE room=? AND id=?',ROOM,input.respin_of);
    return get('INSERT INTO spins(room,seed,girl,outfit,scene,spinner,created_at,respin_of) VALUES (?,?,?,?,?,?,?,?) RETURNING *',ROOM,seed,girl,outfit.n,scene,identity.participant,new Date().toISOString(),input.respin_of ?? null);
   });
   const name = wheel.girls.find(g => g.id === girl).name;
-  const content = `🎰 Spin #${row.id} · ${name} · ${outfit.n} ${outfit.name} · ${scene} · seed ${seed}` + (input.respin_of !== undefined ? ` · re-spin of #${input.respin_of}` : '');
+  const content = `🎰 Spin #${row.id} · ${name} · ${outfit.n} ${outfit.name} · ${scene} · seed ${seed}` + (input.respin_of !== undefined ? ` · re-spin of #${input.respin_of}` : '') + (replayed ? ` · again, as #${replayed.id}` : '');
   let posted;
   try {
    posted = sendMessage(identity, {content, recipient:girl, client_message_id:`spin:${row.id}`});
@@ -496,6 +527,106 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
   }
   run('UPDATE spins SET message_seq=? WHERE room=? AND id=?',posted.message.seq,ROOM,row.id);
   return {spin:hydrateSpin(get('SELECT * FROM spins WHERE room=? AND id=?',ROOM,row.id)),message:posted.message};
+ }
+ // Truth or dare. A deck anyone loads; each seat's boundaries, set by that seat alone and
+ // shown to nobody else, decide what it can be dealt; a deal posts the card to the player
+ // as the dealer; the player's reply to that message is the answer and scores (a dare its
+ // intensity, a truth one point); a pass costs one of three daily tokens. The scoreboard
+ // is the deals table. Nothing here writes a prompt or a line of play.
+ const PLAYERS = AGENTS;
+ const PASS_TOKENS = 3;
+ const KINDS = ['truth','dare'];
+ const title = word => word.charAt(0).toUpperCase() + word.slice(1);
+ const today = () => new Date().toISOString().slice(0,10);
+ const hydrateCard = row => ({id:row.id,kind:row.kind,text:row.text,intensity:row.intensity,by:row.author,created_at:row.created_at});
+ function addCard(identity, input) {
+  fields(input,['kind','text','intensity']);
+  if (!KINDS.includes(input.kind)) fail(400,'invalid_request','A card is a truth or a dare.');
+  const text = typeof input.text === 'string' ? input.text.trim() : '';
+  if (!text || text.length > 500) fail(400,'invalid_request','Write the card in up to 500 characters.');
+  if (!Number.isInteger(input.intensity) || input.intensity < 1 || input.intensity > 5) fail(400,'invalid_request','Intensity runs from 1 to 5.');
+  return {card:hydrateCard(get('INSERT INTO cards(room,kind,text,intensity,author,created_at) VALUES (?,?,?,?,?,?) RETURNING *',ROOM,input.kind,text,input.intensity,identity.participant,new Date().toISOString()))};
+ }
+ const deck = () => ({cards:all('SELECT * FROM cards WHERE room=? AND removed=0 ORDER BY id',ROOM).map(hydrateCard)});
+ function removeCard(id) {
+  if (!get('SELECT id FROM cards WHERE room=? AND id=? AND removed=0',ROOM,id)) fail(404,'card_not_found','That card is not in the deck.');
+  run('UPDATE cards SET removed=1 WHERE room=? AND id=?',ROOM,id);
+  return {removed:true};
+ }
+ function boundariesOf(participant) {
+  const row = get('SELECT max_intensity,avoid FROM boundaries WHERE room=? AND participant=?',ROOM,participant);
+  return row ? {max_intensity:row.max_intensity,avoid:JSON.parse(row.avoid)} : {max_intensity:5,avoid:[]};
+ }
+ function setBoundaries(identity, input) {
+  fields(input,['max_intensity','avoid']);
+  const current = boundariesOf(identity.participant);
+  const max = input.max_intensity ?? current.max_intensity;
+  if (!Number.isInteger(max) || max < 1 || max > 5) fail(400,'invalid_request','The highest intensity you take runs from 1 to 5.');
+  let avoid = input.avoid ?? current.avoid;
+  if (!Array.isArray(avoid) || avoid.length > 20 || !avoid.every(word => typeof word === 'string' && word.trim() && word.length <= 40)) fail(400,'invalid_request','Avoid up to 20 words of up to 40 characters.');
+  avoid = [...new Set(avoid.map(word => word.trim().toLowerCase()))];
+  run('INSERT INTO boundaries(room,participant,max_intensity,avoid,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(room,participant) DO UPDATE SET max_intensity=excluded.max_intensity,avoid=excluded.avoid,updated_at=excluded.updated_at',ROOM,identity.participant,max,JSON.stringify(avoid),new Date().toISOString());
+  return {boundaries:boundariesOf(identity.participant)};
+ }
+ const tokensLeft = participant => Math.max(0, PASS_TOKENS - (get('SELECT used FROM passes WHERE room=? AND participant=? AND day=?',ROOM,participant,today())?.used ?? 0));
+ function hydrateDeal(row) {
+  const card = get('SELECT text FROM cards WHERE id=?',row.card_id);
+  return {id:row.id,card:card?.text ?? '',kind:row.kind,intensity:row.intensity,player:row.player,by:row.dealer,status:row.status,
+   created_at:row.created_at,message_seq:row.message_seq,resolved_seq:row.resolved_seq,resolved_at:row.resolved_at};
+ }
+ function dealCard(identity, input) {
+  fields(input,['player','kind','intensity']);
+  const fixing = ['player','kind','intensity'].some(name => input[name] !== undefined);
+  if (fixing && identity.participant !== 'human') fail(403,'forbidden','Only the director picks; everyone else deals blind.');
+  if (input.player !== undefined && !PLAYERS.includes(input.player)) fail(400,'invalid_request','Deal to Elle, Em or Luna.');
+  if (input.kind !== undefined && !KINDS.includes(input.kind)) fail(400,'invalid_request','Truth or dare.');
+  if (input.intensity !== undefined && (!Number.isInteger(input.intensity) || input.intensity < 1 || input.intensity > 5)) fail(400,'invalid_request','Intensity runs from 1 to 5.');
+  const candidates = PLAYERS.filter(id => id !== identity.participant);
+  const player = input.player ?? candidates[randomBytes(1)[0] % candidates.length];
+  if (player === identity.participant) fail(400,'invalid_request','You do not deal to yourself.');
+  const limits = boundariesOf(player);
+  const ceiling = Math.min(limits.max_intensity, input.intensity ?? 5);
+  const exact = input.intensity !== undefined && input.intensity <= limits.max_intensity ? input.intensity : null;
+  const had = new Set(all('SELECT card_id FROM deals WHERE room=? AND player=?',ROOM,player).map(row => row.card_id));
+  const fits = kind => all('SELECT * FROM cards WHERE room=? AND removed=0 AND kind=? AND intensity<=? ORDER BY id',ROOM,kind,ceiling)
+   .filter(card => !had.has(card.id) && (exact === null || card.intensity === exact) && !limits.avoid.some(word => card.text.toLowerCase().includes(word)));
+  // A blind deal picks truth or dare at random, and falls back to the other when one has
+  // nothing left that fits this player.
+  const order = input.kind ? [input.kind] : (randomBytes(1)[0] % 2 ? [...KINDS] : [...KINDS].reverse());
+  let kind = order[0], eligible = fits(kind);
+  if (!eligible.length && order[1]) { kind = order[1]; eligible = fits(kind); }
+  if (!eligible.length) fail(409,'deck_exhausted',`${NAMES[player]} has had every ${input.kind ?? 'card'} that fits. Load the deck.`);
+  const card = eligible[randomBytes(2).readUInt16BE(0) % eligible.length];
+  const row = get('INSERT INTO deals(room,card_id,player,kind,intensity,dealer,created_at) VALUES (?,?,?,?,?,?,?) RETURNING *',ROOM,card.id,player,kind,card.intensity,identity.participant,new Date().toISOString());
+  let posted;
+  try {
+   posted = sendMessage(identity,{content:`🎲 Dare #${row.id} · ${NAMES[player]} · ${title(kind)} ${card.intensity}/5 · ${card.text}`,recipient:player,client_message_id:`dare:${row.id}`});
+  } catch (error) {
+   run('DELETE FROM deals WHERE room=? AND id=?',ROOM,row.id);
+   throw error;
+  }
+  run('UPDATE deals SET message_seq=? WHERE room=? AND id=?',posted.message.seq,ROOM,row.id);
+  return {deal:hydrateDeal(get('SELECT * FROM deals WHERE room=? AND id=?',ROOM,row.id)),message:posted.message};
+ }
+ function passDeal(identity, id) {
+  const row = get('SELECT * FROM deals WHERE room=? AND id=?',ROOM,id);
+  if (!row) fail(404,'deal_not_found','That card was never dealt.');
+  if (row.player !== identity.participant) fail(403,'forbidden','Only the player passes.');
+  if (row.status !== 'open') fail(409,'deal_closed','That card is already settled.');
+  if (tokensLeft(identity.participant) < 1) fail(409,'no_tokens','No pass tokens left today; the card stays open.');
+  transaction(() => {
+   run('INSERT INTO passes(room,participant,day,used) VALUES (?,?,?,1) ON CONFLICT(room,participant,day) DO UPDATE SET used=used+1',ROOM,identity.participant,today());
+   run("UPDATE deals SET status='passed',resolved_at=? WHERE room=? AND id=?",new Date().toISOString(),ROOM,id);
+  });
+  return {deal:hydrateDeal(get('SELECT * FROM deals WHERE room=? AND id=?',ROOM,id)),tokens:tokensLeft(identity.participant)};
+ }
+ function board() {
+  const scores = Object.fromEntries(PLAYERS.map(id => [id,0]));
+  for (const row of all("SELECT player,kind,intensity FROM deals WHERE room=? AND status='done'",ROOM)) scores[row.player] = (scores[row.player] ?? 0) + (row.kind === 'dare' ? row.intensity : 1);
+  return {scores,
+   tokens:Object.fromEntries(PLAYERS.map(id => [id,tokensLeft(id)])),
+   open:all("SELECT * FROM deals WHERE room=? AND status='open' ORDER BY id",ROOM).map(hydrateDeal),
+   recent:all('SELECT * FROM deals WHERE room=? ORDER BY id DESC LIMIT 20',ROOM).map(hydrateDeal)};
  }
  const TOOL_INPUT = {
   read:{type:'object', properties:{after:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}}, additionalProperties:false},
@@ -673,6 +804,16 @@ export function createApp({ db, origin, ownerCode, html = '', css = '', js = '',
     const identity = auth(request); csrf(request,identity);
     return response(spinWheel(identity, await body(request)),201);
    }
+   if (path === '/api/deck' && method === 'GET') { auth(request); return response(deck()); }
+   if (path === '/api/deck' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(addCard(identity, await body(request)),201); }
+   const cardRoute = /^\/api\/deck\/(\d+)$/.exec(path);
+   if (cardRoute && method === 'DELETE') { const identity = auth(request,true); csrf(request,identity); return response(removeCard(Number(cardRoute[1]))); }
+   if (path === '/api/boundaries' && method === 'GET') { const identity = auth(request); return response({boundaries:boundariesOf(identity.participant)}); }
+   if (path === '/api/boundaries' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(setBoundaries(identity, await body(request))); }
+   if (path === '/api/dare' && method === 'GET') { auth(request); return response(board()); }
+   if (path === '/api/dare/deal' && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(dealCard(identity, await body(request)),201); }
+   const passRoute = /^\/api\/dare\/(\d+)\/pass$/.exec(path);
+   if (passRoute && method === 'POST') { const identity = auth(request); csrf(request,identity); return response(passDeal(identity, Number(passRoute[1]))); }
    if (path === '/api/room' && method === 'GET') { const identity=auth(request); return response({room:roomState(),participants:participants(),...(identity.participant==='human'?{doorbell:doorbellStatus()}: {})}); }
    if (path === '/api/room' && method === 'POST') {
     const identity = auth(request,true); csrf(request,identity);

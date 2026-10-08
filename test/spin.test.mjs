@@ -92,6 +92,19 @@ test('the same seed lands the same way, so a lucky spin can be made twice', asyn
  assert.notEqual(again.id, first.id);
 });
 
+test('a replay lands exactly where a past spin landed, fixed reels included, and any seat may ask for one', async (t) => {
+ const f = fixture(t);
+ const cookie = await login(f);
+ const em = await key(f, cookie, 'em');
+ const fixed = (await json(await spin(f, { cookie }, { girl: 'luna', outfit: 19, scene: WHEEL.scenes[3] }), 201)).spin;
+ const bySeed = (await json(await spin(f, { cookie }, { seed: fixed.seed }), 201)).spin;
+ assert.notDeepEqual([bySeed.girl, bySeed.outfit.n, bySeed.scene], ['luna', 19, WHEEL.scenes[3]], 'the seed alone replays only the reels left to chance');
+ const replay = await json(await spin(f, { token: em }, { replay: fixed.id }), 201);
+ assert.deepEqual([replay.spin.girl, replay.spin.outfit.n, replay.spin.scene, replay.spin.seed], ['luna', 19, WHEEL.scenes[3], fixed.seed]);
+ assert.match(replay.message.content, new RegExp(`again, as #${fixed.id}$`));
+ assert.equal((await spin(f, { token: em }, { replay: 999 })).status, 400);
+});
+
 test('the director fixes any reel and re-spins; everyone else only spins', async (t) => {
  const f = fixture(t);
  const cookie = await login(f);

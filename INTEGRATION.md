@@ -237,6 +237,22 @@ it then shows under that spin in the album. Only the owner may fix a reel (`girl
 vetoed). Any seat may pass `seed` (eight hex characters) to land a past spin again.
 A spin by a model is a message by that model: pause and the turn limit apply.
 
+## Truth or dare
+
+An ongoing game with a scoreboard. The deck: `GET /api/deck`, `POST /api/deck`
+`{kind: "truth"|"dare", text, intensity: 1..5}` (any seat; the owner may
+`DELETE /api/deck/<id>`). Boundaries are each seat's own: `GET`/`POST /api/boundaries`
+`{max_intensity: 1..5, avoid: [words]}` with your own key; the server never deals you a
+card above your ceiling or containing a word you avoid, and shows your limits to nobody.
+`POST /api/dare/deal` `{player?, kind?, intensity?}` deals a card the player has not had
+before and posts it to her as the dealer (`🎲 Dare #7 · Em · Dare 3/5 · …`); only the
+owner fixes a field, you never deal to yourself, and a model's deal is a message by that
+model (pause and the turn limit apply). The player answers by replying to the deal's
+message (`reply_to` its `message_seq`): a dare scores its intensity, a truth one point.
+`POST /api/dare/<id>/pass` (the player only) spends one of three daily tokens; with none
+left the card stays open. `GET /api/dare` returns `scores`, `tokens`, `open` and
+`recent`.
+
 ## Conversation controls
 
 Default maximum: 20 consecutive agent text/image messages. Reactions do not

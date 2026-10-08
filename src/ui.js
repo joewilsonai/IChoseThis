@@ -12,7 +12,9 @@
     "image-caption", "image-time", "open-image", "previous-image", "next-image", "image-input",
     "attach-button", "attachment-previews", "composer-reply", "composer-reply-name", "composer-reply-text",
     "spin-button", "spin-dialog", "spin-go", "spin-again", "spin-result", "spin-album", "reel-girl", "reel-outfit", "reel-scene",
-    "fix-girl", "fix-outfit", "fix-scene", "director-controls", "close-spin"
+    "fix-girl", "fix-outfit", "fix-scene", "director-controls", "close-spin",
+    "dare-button", "dare-dialog", "close-dare", "scoreboard", "deal-player", "deal-kind", "deal-intensity", "dare-deal",
+    "dare-status", "dare-open", "card-kind", "card-intensity", "card-text", "card-add", "deck-list", "dare-recent"
   ].map((id) => [id, byId(id)]));
   const state = { authenticated: false, cursor: 0, messages: new Map(), room: null, polling: false,
     timer: null, following: true, pendingAttempts: new Map(), sending: false, setting: false, loading: true, failures: 0,
@@ -756,6 +758,7 @@
   const wheel = { data: null, last: null, spinning: false };
 
   function fillSelect(select, items, label) {
+    const chosen = select.value;
     const keep = select.firstElementChild;
     select.replaceChildren(keep);
     for (const item of items) {
@@ -764,6 +767,7 @@
       option.textContent = label(item);
       select.append(option);
     }
+    if (chosen && items.some(item => item.value === chosen)) select.value = chosen;   // a fixed reel stays fixed across refreshes
   }
 
   function renderAlbum() {
@@ -844,8 +848,11 @@
       showLanding(result.spin);
       ui["spin-result"].textContent = "Posted to " + (names[result.spin.girl] || result.spin.girl) + " · seed " + result.spin.seed + ". Her camera's turn.";
       ui["spin-again"].hidden = false;
-      await loadWheel();
       schedulePoll(0);
+      // The spin is posted whatever happens to the album refresh; a failed refresh must not
+      // read as a failed spin, or the next click posts a second one.
+      try { await loadWheel(); }
+      catch (error) { ui["spin-result"].textContent += " (The album did not refresh: " + error.message + ")"; }
     } catch (error) {
       ui["spin-result"].textContent = error.message;
       ui["spin-result"].classList.add("error");
@@ -862,6 +869,97 @@
     ui["spin-dialog"].showModal();
     try { await loadWheel(); }
     catch (error) { ui["spin-result"].textContent = error.message; ui["spin-result"].classList.add("error"); }
+  }
+
+  // ── truth or dare ─────────────────────────────────────────────────────────
+  function dealLine(deal) {
+    return "#" + deal.id + " · " + (names[deal.player] || deal.player) + " · " + deal.kind.charAt(0).toUpperCase() + deal.kind.slice(1) + " " + deal.intensity + "/5 · " + deal.card;
+  }
+
+  function renderBoard(board) {
+    const rows = Object.keys(board.scores).map(id => {
+      const tr = document.createElement("tr");
+      for (const text of [names[id] || id, String(board.scores[id]), String(board.tokens[id] ?? "")]) tr.append(node("td", "", text));
+      return tr;
+    });
+    ui.scoreboard.querySelector("tbody").replaceChildren(...rows);
+    ui["dare-open"].replaceChildren(...board.open.map(deal => {
+      const row = node("div", "spin-entry");
+      row.append(node("strong", "", dealLine(deal)), node("span", "spin-meta", "open · dealt by " + (names[deal.by] || deal.by)));
+      return row;
+    }));
+    if (!board.open.length) ui["dare-open"].append(node("p", "spin-meta", "Nothing open."));
+    ui["dare-recent"].replaceChildren(...board.recent.map(deal => {
+      const row = node("div", "spin-entry" + (deal.status === "passed" ? " vetoed" : ""));
+      row.append(node("strong", "", dealLine(deal)), node("span", "spin-meta", deal.status + " · dealt by " + (names[deal.by] || deal.by)));
+      return row;
+    }));
+    if (!board.recent.length) ui["dare-recent"].append(node("p", "spin-meta", "No deals yet."));
+  }
+
+  function renderDeck(deck) {
+    ui["deck-list"].replaceChildren(...deck.cards.map(card => {
+      const row = node("div", "spin-entry");
+      row.append(node("strong", "", card.kind.charAt(0).toUpperCase() + card.kind.slice(1) + " " + card.intensity + "/5 · " + card.text), node("span", "spin-meta", "by " + (names[card.by] || card.by)));
+      const remove = node("button", "message-action", "Remove");
+      remove.type = "button";
+      remove.addEventListener("click", async () => {
+        try { await request("/api/deck/" + card.id, { method: "DELETE", body: "{}" }); await loadGame(); }
+        catch (error) { ui["dare-status"].textContent = error.message; }
+      });
+      row.append(remove);
+      return row;
+    }));
+    if (!deck.cards.length) ui["deck-list"].append(node("p", "spin-meta", "The deck is empty. Seed it."));
+  }
+
+  async function loadGame() {
+    const [board, deck] = await Promise.all([request("/api/dare"), request("/api/deck")]);
+    const players = Object.keys(board.scores);
+    if (ui["deal-player"].options.length === 1) for (const id of players) { const option = document.createElement("option"); option.value = id; option.textContent = names[id] || id; ui["deal-player"].append(option); }
+    renderBoard(board);
+    renderDeck(deck);
+  }
+
+  async function openGame() {
+    ui["dare-status"].textContent = "";
+    ui["dare-dialog"].showModal();
+    try { await loadGame(); }
+    catch (error) { ui["dare-status"].textContent = error.message; }
+  }
+
+  async function dealOne() {
+    ui["dare-deal"].disabled = true;
+    const body = {};
+    if (ui["deal-player"].value) body.player = ui["deal-player"].value;
+    if (ui["deal-kind"].value) body.kind = ui["deal-kind"].value;
+    if (ui["deal-intensity"].value) body.intensity = Number(ui["deal-intensity"].value);
+    try {
+      const result = await request("/api/dare/deal", { method: "POST", body: JSON.stringify(body) });
+      ui["dare-status"].textContent = "Dealt to " + (names[result.deal.player] || result.deal.player) + ": " + result.deal.card;
+      await loadGame();
+      schedulePoll(0);
+    } catch (error) {
+      ui["dare-status"].textContent = error.message;
+    } finally {
+      ui["dare-deal"].disabled = false;
+    }
+  }
+
+  async function addCard() {
+    const text = ui["card-text"].value.trim();
+    if (!text) { ui["card-text"].focus(); return; }
+    ui["card-add"].disabled = true;
+    try {
+      await request("/api/deck", { method: "POST", body: JSON.stringify({ kind: ui["card-kind"].value, text, intensity: Number(ui["card-intensity"].value) }) });
+      ui["card-text"].value = "";
+      ui["dare-status"].textContent = "Card added.";
+      await loadGame();
+    } catch (error) {
+      ui["dare-status"].textContent = error.message;
+    } finally {
+      ui["card-add"].disabled = false;
+    }
   }
 
   async function logout() {
@@ -957,6 +1055,10 @@
     }
     ui["settings-status"].textContent = "";
   });
+  ui["dare-button"].addEventListener("click", openGame);
+  ui["close-dare"].addEventListener("click", () => ui["dare-dialog"].close());
+  ui["dare-deal"].addEventListener("click", dealOne);
+  ui["card-add"].addEventListener("click", addCard);
   ui["spin-button"].addEventListener("click", openWheel);
   ui["close-spin"].addEventListener("click", () => ui["spin-dialog"].close());
   ui["spin-go"].addEventListener("click", () => doSpin());
