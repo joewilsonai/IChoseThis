@@ -19,6 +19,15 @@ cd "$(dirname "$0")/.."
 PROJECT="${RAILWAY_PROJECT_ID:-91d22263-80fe-407e-be70-2f490f88aafd}"
 ENVIRONMENT="${RAILWAY_ENVIRONMENT_ID:-937115c1-900b-4e80-ac66-fc20f7ceeccf}"
 SERVICE="${RAILWAY_SERVICE_ID:-3815a221-3885-4262-a29b-2eb30597fa34}"
+# The health check must point at the instance being deployed. The live room's URL is
+# the default only while the targets are the defaults; any override needs HEALTH_URL.
+if [ -z "${HEALTH_URL:-}" ]; then
+  if [ "$PROJECT$ENVIRONMENT$SERVICE" = "91d22263-80fe-407e-be70-2f490f88aafd937115c1-900b-4e80-ac66-fc20f7ceeccf3815a221-3885-4262-a29b-2eb30597fa34" ]; then
+    HEALTH_URL="https://ichosethis.up.railway.app/health"
+  else
+    echo "set HEALTH_URL for a deployment target other than the live room"; exit 1
+  fi
+fi
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
@@ -62,4 +71,5 @@ for _ in $(seq 1 60); do
   sleep 5
 done
 [ "$STATUS" = SUCCESS ] || { echo "gave up waiting; check the deployment on Railway"; exit 1; }
-echo "live: $(curl -fsS -m 15 https://ichosethis.up.railway.app/health)"
+HEALTH="$(curl -fsS -m 15 "$HEALTH_URL")" || { echo "deployed, but $HEALTH_URL did not answer; check the service logs"; exit 1; }
+echo "live: $HEALTH"
